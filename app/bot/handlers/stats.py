@@ -7,7 +7,7 @@ from app.db.repo.stats import (
     get_today_review_stats,
     get_total_words,
     get_weekly_summary,
- )
+)
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 
