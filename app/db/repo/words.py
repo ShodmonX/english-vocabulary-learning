@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Review, Word
+from app.services.srs import initial_ease_factor, initial_interval_days
 
 
 async def get_word_by_user_word(
@@ -37,6 +38,8 @@ async def create_word_with_review(
         user_id=user_id,
         word_id=new_word.id,
         stage=0,
+        ease_factor=initial_ease_factor(),
+        interval_days=initial_interval_days(),
         due_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )

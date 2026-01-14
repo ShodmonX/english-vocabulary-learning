@@ -25,9 +25,16 @@ async def get_review_by_id(session: AsyncSession, review_id: int) -> Review | No
 
 
 async def update_review(
-    session: AsyncSession, review: Review, stage: int, due_at: datetime
+    session: AsyncSession,
+    review: Review,
+    stage: int,
+    ease_factor: float,
+    interval_days: float,
+    due_at: datetime,
 ) -> None:
     review.stage = stage
+    review.ease_factor = ease_factor
+    review.interval_days = interval_days
     review.due_at = due_at
     review.updated_at = datetime.utcnow()
     await session.commit()
