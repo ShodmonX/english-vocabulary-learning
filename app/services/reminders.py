@@ -5,10 +5,12 @@ from datetime import time
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User
+from app.db.models import User, UserSettings
 from app.db.repo.stats import get_due_count
+from app.db.repo.user_settings import get_user_settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 
@@ -38,17 +40,32 @@ class ReminderService:
             self.scheduler.remove_job(job_id)
 
     async def load_users(self, session: AsyncSession) -> None:
-        result = await session.execute(select(User))
-        for user in result.scalars().all():
-            if user.reminder_enabled:
-                self.schedule_user(user.telegram_id, user.reminder_time, user.timezone)
+        try:
+            result = await session.execute(
+                select(User, UserSettings).outerjoin(
+                    UserSettings, UserSettings.user_id == User.id
+                )
+            )
+        except ProgrammingError:
+            return
+        for user, settings in result.all():
+            enabled = settings.notifications_enabled if settings else user.reminder_enabled
+            remind_time = (
+                settings.notification_time if settings and settings.notification_time else user.reminder_time
+            )
+            if enabled and remind_time:
+                self.schedule_user(user.telegram_id, remind_time, user.timezone)
 
     async def send_reminder(self, telegram_id: int) -> None:
         from app.main import bot  # lazy import to avoid circular dependency
 
         async with AsyncSessionLocal() as session:
             user = await get_user_by_telegram_id(session, telegram_id)
-            if not user or not user.reminder_enabled:
+            if not user:
+                return
+            settings = await get_user_settings(session, user.id)
+            enabled = settings.notifications_enabled if settings else user.reminder_enabled
+            if not enabled:
                 return
             due_count = await get_due_count(session, user.id)
             if due_count == 0:

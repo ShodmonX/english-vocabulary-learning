@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Enum,
     Float,
     ForeignKey,
     Index,
@@ -40,9 +41,39 @@ class User(Base):
     words: Mapped[list[Word]] = relationship("Word", back_populates="user")
 
 
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    learning_words_per_day: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    quiz_words_per_session: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    pronunciation_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    pronunciation_mode: Mapped[str] = mapped_column(
+        Enum("single", "quiz", "both", name="pronunciation_mode"),
+        default="both",
+        nullable=False,
+    )
+    translation_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    translation_engine: Mapped[str] = mapped_column(
+        Enum("google", name="translation_engine"),
+        default="google",
+        nullable=False,
+    )
+    auto_translation_suggest: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    daily_limit_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    daily_pronunciation_limit: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notification_time: Mapped[time | None] = mapped_column(Time)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class Word(Base):
     __tablename__ = "words"
-    __table_args__ = (UniqueConstraint("user_id", "word", name="uq_words_user_word"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "word", name="uq_words_user_word"),
+        Index("ix_words_user_created", "user_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -79,6 +110,34 @@ class ReviewLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PronunciationLog(Base):
+    __tablename__ = "pronunciation_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TranslationCache(Base):
+    __tablename__ = "translation_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_text_norm",
+            "source_lang",
+            "target_lang",
+            name="uq_translation_cache_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_text_norm: Mapped[str] = mapped_column(String(256), nullable=False)
+    source_lang: Mapped[str] = mapped_column(String(8), nullable=False)
+    target_lang: Mapped[str] = mapped_column(String(8), nullable=False)
+    translated_text: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

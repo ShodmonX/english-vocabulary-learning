@@ -1,18 +1,24 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_menu_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+def main_menu_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
             [
-                InlineKeyboardButton(text="📚 Mashq qilish", callback_data="menu:training"),
-                InlineKeyboardButton(text="➕ So‘z qo‘shish", callback_data="menu:add_word"),
+                KeyboardButton(text="📚 Mashq qilish"),
+                KeyboardButton(text="🧩 Quiz"),
             ],
             [
-                InlineKeyboardButton(text="📊 Natijalar", callback_data="menu:stats"),
-                InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="menu:settings"),
+                KeyboardButton(text="➕ So‘z qo‘shish"),
+                KeyboardButton(text="📊 Natijalar"),
             ],
-        ]
+            [
+                KeyboardButton(text="🗂 So‘zlarim"),
+                KeyboardButton(text="⚙️ Sozlamalar"),
+            ],
+            [KeyboardButton(text="🗣 Talaffuz")],
+        ],
+        resize_keyboard=True,
     )
 
 

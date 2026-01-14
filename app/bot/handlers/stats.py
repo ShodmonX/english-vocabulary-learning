@@ -1,5 +1,6 @@
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb
 from app.db.repo.stats import (
@@ -15,12 +16,20 @@ router = Router()
 
 
 @router.callback_query(F.data == "menu:stats")
-async def show_stats(callback: CallbackQuery) -> None:
+async def show_stats(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await show_stats_message(callback.message, callback.from_user.id, state)
+    await callback.answer()
+
+
+async def show_stats_message(
+    message: Message, user_id: int, state: FSMContext
+) -> None:
+    await state.clear()
     async with AsyncSessionLocal() as session:
-        user = await get_user_by_telegram_id(session, callback.from_user.id)
+        user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
-            await callback.answer()
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             return
 
         today_stats = await get_today_review_stats(session, user.id)
@@ -50,5 +59,4 @@ async def show_stats(callback: CallbackQuery) -> None:
         + "\n".join(weekly_lines)
         + "\n\n💡 Davom eting, natija albatta bo‘ladi!"
     )
-    await callback.message.answer(text, reply_markup=main_menu_kb())
-    await callback.answer()
+    await message.answer(text, reply_markup=main_menu_kb())

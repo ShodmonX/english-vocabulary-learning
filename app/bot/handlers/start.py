@@ -1,8 +1,10 @@
 from aiogram import Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot.keyboards.main import main_menu_kb
+from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import create_user, get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 
@@ -10,17 +12,19 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
             user = await create_user(session, message.from_user.id)
-            from app.main import reminder_service
+        settings = await get_or_create_user_settings(session, user)
+        from app.main import reminder_service
 
-            if user.reminder_enabled:
-                reminder_service.schedule_user(
-                    message.from_user.id, user.reminder_time, user.timezone
-                )
+        if settings.notifications_enabled and settings.notification_time:
+            reminder_service.schedule_user(
+                message.from_user.id, settings.notification_time, user.timezone
+            )
             text = (
                 "👋 Assalomu alaykum! Ingliz tilini o‘rganishni bugun boshlaymizmi? 🇬🇧✨\n"
                 "Keling, har kuni oz-ozdan, lekin samarali o‘rganamiz!\n"

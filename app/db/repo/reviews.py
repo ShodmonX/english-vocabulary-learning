@@ -24,6 +24,13 @@ async def get_review_by_id(session: AsyncSession, review_id: int) -> Review | No
     return result.scalar_one_or_none()
 
 
+async def get_review_by_word_id(session: AsyncSession, word_id: int) -> Review | None:
+    result = await session.execute(
+        select(Review).options(joinedload(Review.word)).where(Review.word_id == word_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def update_review(
     session: AsyncSession,
     review: Review,

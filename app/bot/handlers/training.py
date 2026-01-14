@@ -3,12 +3,13 @@ from datetime import datetime
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb, training_kb
 from app.db.repo.reviews import get_due_reviews, get_review_by_id, log_review, update_review
 from app.db.repo.sessions import create_session, delete_session, get_session, update_session_review
 from app.db.repo.stats import get_today_total
+from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 from app.services.srs import next_due_forgot, next_due_known, next_due_skip
@@ -33,16 +34,16 @@ def _meaning_text(translation: str, example: str | None, pos: str | None) -> str
     return text
 
 
-async def send_next_card(callback: CallbackQuery, state: FSMContext) -> None:
+async def send_next_card(message: Message, user_id: int, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
-        user = await get_user_by_telegram_id(session, callback.from_user.id)
+        user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await state.clear()
             return
         db_session = await get_session(session, user.id)
         if not db_session:
-            await callback.message.answer(
+            await message.answer(
                 "⚠️ Mashq sessiyasi topilmadi. Qaytadan boshlaymizmi? 🙂"
             )
             await state.clear()
@@ -58,7 +59,7 @@ async def send_next_card(callback: CallbackQuery, state: FSMContext) -> None:
                 review = due_reviews[0]
 
         if not review:
-            await callback.message.answer(
+            await message.answer(
                 "🎉 Bugungi mashq tugadi! Yaxshi ish qildingiz 👏",
                 reply_markup=main_menu_kb(),
             )
@@ -66,31 +67,38 @@ async def send_next_card(callback: CallbackQuery, state: FSMContext) -> None:
             await state.clear()
             return
         await update_session_review(session, user.id, review.id)
+        settings = await get_or_create_user_settings(session, user)
         progress_count = await get_today_total(session, user.id)
-        progress_text = f"Bugun {progress_count} / {user.daily_goal}"
+        progress_text = f"Bugun {progress_count} / {settings.learning_words_per_day}"
         await state.set_state(TrainingStates.in_session)
         await state.update_data(review_id=review.id, meaning_shown=False)
-        await callback.message.answer(
+        await message.answer(
             _card_text(review.word.word, progress_text), reply_markup=training_kb()
         )
 
 
 @router.callback_query(F.data == "menu:training")
 async def start_training(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await start_training_message(callback.message, callback.from_user.id, state)
+    await callback.answer()
+
+
+async def start_training_message(
+    message: Message, user_id: int, state: FSMContext
+) -> None:
     await state.clear()
     async with AsyncSessionLocal() as session:
-        user = await get_user_by_telegram_id(session, callback.from_user.id)
+        user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
-            await callback.answer()
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             return
         created = await create_session(session, user.id)
         if not created:
-            await callback.message.answer(
+            await message.answer(
                 "🙂 Sizda aktiv mashq bor. Davom etamizmi?"
             )
-    await send_next_card(callback, state)
-    await callback.answer()
+    await send_next_card(message, user_id, state)
 
 
 @router.callback_query(F.data == "train:show")
@@ -119,7 +127,7 @@ async def show_meaning(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.message.answer(
                 "🙂 Sessiya yangilandi. Keyingi kartani ko‘ramiz."
             )
-            await send_next_card(callback, state)
+            await send_next_card(callback.message, callback.from_user.id, state)
             await callback.answer()
             return
         review = await get_review_by_id(session, review_id)
@@ -160,7 +168,7 @@ async def _handle_answer(callback: CallbackQuery, state: FSMContext, action: str
             await callback.message.answer(
                 "🙂 Sessiya yangilandi. Keyingi kartani ko‘ramiz."
             )
-            await send_next_card(callback, state)
+            await send_next_card(callback.message, callback.from_user.id, state)
             await callback.answer()
             return
         review = await get_review_by_id(session, review_id)
@@ -185,7 +193,7 @@ async def _handle_answer(callback: CallbackQuery, state: FSMContext, action: str
         await update_review(session, review, stage, ease, interval, due_at)
         await log_review(session, review.user_id, review.word_id, action)
 
-    await send_next_card(callback, state)
+    await send_next_card(callback.message, callback.from_user.id, state)
     if action == "known":
         await callback.answer("🔥 A’lo! Bu so‘z yodingizda ekan!")
     elif action == "forgot":

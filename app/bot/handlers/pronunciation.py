@@ -1,0 +1,538 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import random
+import time
+from pathlib import Path
+
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
+
+from app.bot.keyboards.main import main_menu_kb
+from app.bot.keyboards.pronunciation import (
+    pronunciation_menu_kb,
+    quiz_done_kb,
+    quiz_kb,
+    results_kb,
+    single_mode_kb,
+    single_result_kb,
+    single_word_kb,
+)
+from app.config import settings
+from app.db.repo.pronunciation_logs import get_today_pronunciation_count, log_pronunciation
+from app.db.repo.user_settings import get_or_create_user_settings
+from app.db.repo.users import get_or_create_user
+from app.db.repo.words import get_word, list_recent_words, search_words
+from app.db.session import AsyncSessionLocal
+from app.services.pronunciation.base import PronunciationEngine
+from app.services.pronunciation.stt_engine import STTPronunciationEngine
+from app.utils.bad_words import contains_bad_words
+from app.services.stt.base import STTProviderError
+from app.services.stt.local_whisper import LocalWhisperSTT
+from app.db.repo.reviews import get_due_reviews
+from app.utils.audio import convert_to_wav, download_voice
+
+router = Router()
+
+PAGE_SIZE = 10
+MAX_VOICE_SECONDS = 15
+MAX_VOICE_BYTES = 3 * 1024 * 1024
+_LOCKS: dict[int, asyncio.Lock] = {}
+logger = logging.getLogger("pronunciation")
+
+
+class PronunciationStates(StatesGroup):
+    menu = State()
+    single_select_mode = State()
+    search_query = State()
+    search_results = State()
+    recent_results = State()
+    waiting_voice_single = State()
+    quiz_active = State()
+
+
+def _engine() -> PronunciationEngine:
+    return STTPronunciationEngine(LocalWhisperSTT())
+
+
+def _single_prompt(word: str) -> str:
+    return f"🎯 Ayting: *{word}*\n🎙 Voice yuboring (5–10 soniya)."
+
+
+def _quiz_prompt(word: str, idx: int, total: int) -> str:
+    return f"🧩 Talaffuz Quiz — Savol {idx}/{total}\n🎯 Ayting: *{word}*\n🎙 Voice yuboring."
+
+
+def _verdict_text(verdict: str) -> str:
+    if verdict == "correct":
+        return "✅ To‘g‘ri"
+    if verdict == "close":
+        return "🟨 Yaqin"
+    return "❌ Noto‘g‘ri"
+
+
+def _build_pronunciation_questions(words: list[object], max_questions: int = 10) -> list[dict[str, object]]:
+    if not words:
+        return []
+    count = min(len(words), max_questions)
+    sample = random.sample(words, count)
+    return [{"word_id": w.id, "word": w.word} for w in sample]
+
+
+def _normalize_transcript(text: str) -> str:
+    return text.strip() if text else ""
+
+
+async def _require_user(message: Message) -> int | None:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, message.from_user.id)
+        await get_or_create_user_settings(session, user)
+        return user.id
+
+
+async def _render_results(callback: CallbackQuery, state: FSMContext, page: int, context: str) -> None:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        await get_or_create_user_settings(session, user)
+        if context == "search":
+            data = await state.get_data()
+            query = data.get("query", "")
+            words = await search_words(session, user.id, query, PAGE_SIZE + 1, page * PAGE_SIZE)
+        else:
+            words = await list_recent_words(session, user.id, PAGE_SIZE + 1, page * PAGE_SIZE)
+
+    if not words:
+        await callback.message.edit_text("Hech narsa topilmadi 🙂", reply_markup=single_mode_kb())
+        await state.set_state(PronunciationStates.single_select_mode)
+        return
+
+    has_next = len(words) > PAGE_SIZE
+    words = words[:PAGE_SIZE]
+    items = [(word.id, f"{word.word} — {word.translation}") for word in words]
+    await state.update_data(context=context, page=page)
+    title = "🔎 Natijalar" if context == "search" else "🕒 Oxirgilar"
+    await callback.message.edit_text(
+        f"{title} ({page + 1}):", reply_markup=results_kb(items, page, context, has_next)
+    )
+
+
+async def _cleanup_files(paths: list[Path]) -> None:
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+async def _process_voice(
+    message: Message, user_id: int, reference: str
+) -> tuple[str, str | None, int | None] | None:
+    if not message.voice:
+        return None
+    if message.voice.duration and message.voice.duration > MAX_VOICE_SECONDS:
+        await message.answer("⏱ Juda uzun. 5–10 soniya yuboring 🙂")
+        return None
+    ogg_path = None
+    wav_path = None
+    start = None
+    try:
+        ogg_path, size = await download_voice(message.bot, message.voice)
+        if size > MAX_VOICE_BYTES:
+            await message.answer("⏱ Juda katta fayl. 5–10 soniya yuboring 🙂")
+            return None
+        try:
+            wav_path = await convert_to_wav(ogg_path)
+        except RuntimeError:
+            await message.answer("⚠️ Ovozni qayta ishlay olmadim.")
+            return None
+        engine = _engine()
+        start = time.monotonic()
+        logger.info("STT_START user=%s", user_id)
+        result = await engine.assess(str(wav_path), reference)
+        duration_ms = int((time.monotonic() - start) * 1000)
+        transcript_len = len(result.transcript) if result.transcript else 0
+        logger.info(
+            "STT_END user=%s duration_ms=%s transcript_len=%s",
+            user_id,
+            duration_ms,
+            transcript_len,
+        )
+        transcript = _normalize_transcript(result.transcript)
+        if not transcript:
+            await message.answer("🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting.")
+            return None
+        if contains_bad_words(transcript):
+            logger.info("STT_FILTERED user=%s transcript_len=%s", user_id, len(transcript))
+            return result.verdict, None, None
+        logger.info(
+            "STT_VERDICT user=%s verdict=%s transcript_len=%s",
+            user_id,
+            result.verdict,
+            len(transcript),
+        )
+        return result.verdict, transcript, None
+    except STTProviderError:
+        if start is not None:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
+        await message.answer("⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂")
+        return None
+    except Exception:
+        if start is not None:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
+        await message.answer("⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂")
+        return None
+    finally:
+        paths = [p for p in [ogg_path, wav_path] if p]
+        await _cleanup_files(paths)
+
+
+async def open_pronunciation_menu(message: Message, state: FSMContext) -> None:
+    if not settings.pronunciation_enabled:
+        await message.answer("🫤 Talaffuz hozircha o‘chirib qo‘yilgan.")
+        return
+    await state.clear()
+    user_id = await _require_user(message)
+    if not user_id:
+        return
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, user_id)
+        user_settings = await get_or_create_user_settings(session, user)
+    if not user_settings.pronunciation_enabled:
+        await message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+        return
+    await state.set_state(PronunciationStates.menu)
+    await message.answer("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+
+
+@router.callback_query(F.data == "pron:menu")
+async def pron_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(PronunciationStates.menu)
+    await callback.message.edit_text("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pron:menu:back")
+async def pron_menu_back(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(PronunciationStates.menu)
+    await callback.message.edit_text("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pron:menu:single")
+async def pron_single_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        user_settings = await get_or_create_user_settings(session, user)
+    if not user_settings.pronunciation_enabled:
+        await callback.message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+        await callback.answer()
+        return
+    if user_settings.pronunciation_mode not in {"single", "both"}:
+        await callback.message.answer("ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan.")
+        await callback.answer()
+        return
+    await state.set_state(PronunciationStates.single_select_mode)
+    await callback.message.edit_text("🎯 Bitta so‘z tekshirish", reply_markup=single_mode_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pron:single:recent")
+async def pron_single_recent(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(PronunciationStates.recent_results)
+    await _render_results(callback, state, 0, "recent")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pron:single:search")
+async def pron_single_search(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(PronunciationStates.search_query)
+    await callback.message.edit_text("🔎 Qidirish uchun so‘z yozing (masalan: abandon)")
+    await callback.answer()
+
+
+
+
+@router.callback_query(F.data.startswith("pron:search:page:"))
+async def pron_search_page(callback: CallbackQuery, state: FSMContext) -> None:
+    page = int(callback.data.split(":")[-1])
+    await _render_results(callback, state, page, "search")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:recent:page:"))
+async def pron_recent_page(callback: CallbackQuery, state: FSMContext) -> None:
+    page = int(callback.data.split(":")[-1])
+    await _render_results(callback, state, page, "recent")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:pick:"))
+async def pron_pick_word(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, word_id, context, page = callback.data.split(":")
+    word_id_int = int(word_id)
+    page_int = int(page)
+
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        word = await get_word(session, user.id, word_id_int)
+
+    if not word:
+        await callback.message.edit_text("So‘z topilmadi 🙂", reply_markup=single_mode_kb())
+        await state.clear()
+        await callback.answer()
+        return
+
+    await state.set_state(PronunciationStates.waiting_voice_single)
+    await state.update_data(word_id=word_id_int, reference=word.word, context=context, page=page_int)
+    await callback.message.edit_text(
+        _single_prompt(word.word), reply_markup=single_word_kb(context, page_int), parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:single:choose:"))
+async def pron_single_choose(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, context, page = callback.data.split(":")
+    await _render_results(callback, state, int(page), context)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:back:"))
+async def pron_back(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, context, page = callback.data.split(":")
+    await _render_results(callback, state, int(page), context)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pron:exit")
+async def pron_exit(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("🏁 Menyuga qaytdik", reply_markup=None)
+    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:retry:"))
+async def pron_retry(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, context, page = callback.data.split(":")
+    data = await state.get_data()
+    reference = data.get("reference")
+    if reference:
+        await callback.message.edit_text(
+            _single_prompt(reference), reply_markup=single_word_kb(context, int(page)), parse_mode="Markdown"
+        )
+    await callback.answer()
+
+
+async def _handle_single_voice(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    reference = data.get("reference")
+    context = data.get("context", "recent")
+    page = int(data.get("page", 0))
+    if not reference:
+        await message.answer("⚠️ So‘z topilmadi. Qayta tanlang 🙂")
+        return
+    await message.answer("⏳ Tekshiryapman…")
+    result = await _process_voice(message, message.from_user.id, reference)
+    if not result:
+        return
+    verdict, transcript, _ = result
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, message.from_user.id)
+        await log_pronunciation(session, user.id)
+    if transcript:
+        await message.answer(
+            f"{_verdict_text(verdict)}\n📝 Men eshitganim: {transcript}",
+            reply_markup=single_result_kb(context, page),
+        )
+    else:
+        await message.answer(
+            f"{_verdict_text(verdict)}\n⚠️ Natija xavfsizlik sababli ko‘rsatilmadi.",
+            reply_markup=single_result_kb(context, page),
+        )
+
+
+@router.callback_query(F.data == "pron:menu:quiz")
+async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        user_settings = await get_or_create_user_settings(session, user)
+        if not user_settings.pronunciation_enabled:
+            await callback.message.edit_text("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+            await callback.answer()
+            return
+        if user_settings.pronunciation_mode not in {"quiz", "both"}:
+            await callback.message.edit_text("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
+            await callback.answer()
+            return
+        all_words = await list_recent_words(session, user.id, 2000, 0)
+        if not all_words:
+            await callback.message.edit_text("🫤 Avval so‘z qo‘shing ➕")
+            await callback.answer()
+            return
+        due_reviews = await get_due_reviews(session, user.id)
+        due_words = [review.word for review in due_reviews]
+        pool = due_words if due_words else all_words
+        questions = _build_pronunciation_questions(
+            pool, max_questions=user_settings.quiz_words_per_session
+        )
+
+    if not questions:
+        await callback.message.edit_text("🫤 Quiz uchun so‘z topilmadi. Avval so‘z qo‘shing.")
+        await callback.answer()
+        return
+
+    total = len(questions)
+    await state.set_state(PronunciationStates.quiz_active)
+    await state.update_data(
+        questions=questions,
+        idx=0,
+        score=0,
+        correct=0,
+        close=0,
+        wrong=0,
+    )
+    first = questions[0]
+    await callback.message.edit_text(
+        _quiz_prompt(first["word"], 1, total), reply_markup=quiz_kb(), parse_mode="Markdown"
+    )
+    await state.update_data(current_word_id=first["word_id"], reference=first["word"])
+    await callback.answer()
+
+
+async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    questions = data.get("questions", [])
+    idx = data.get("idx", 0)
+    if not questions or idx >= len(questions):
+        return
+    reference = data.get("reference")
+    if not reference:
+        await message.answer("⚠️ So‘z topilmadi. Qayta urinib ko‘ring 🙂")
+        return
+    await message.answer("⏳ Baholayapman…")
+    result = await _process_voice(message, message.from_user.id, reference)
+    if not result:
+        return
+    verdict, transcript, _ = result
+    score = data.get("score", 0)
+    correct = data.get("correct", 0)
+    close = data.get("close", 0)
+    wrong = data.get("wrong", 0)
+    if verdict == "correct":
+        score += 2
+        correct += 1
+    elif verdict == "close":
+        score += 1
+        close += 1
+    else:
+        wrong += 1
+
+    next_idx = idx + 1
+    total = len(questions)
+    transcript_line = (
+        f"📝 Men eshitganim: {transcript}"
+        if transcript
+        else "⚠️ Natija xavfsizlik sababli ko‘rsatilmadi."
+    )
+    await message.answer(
+        f"Natija: {_verdict_text(verdict)}\n"
+        f"{transcript_line}\n"
+        f"⭐ Ball: +{2 if verdict == 'correct' else 1 if verdict == 'close' else 0} | Jami: {score}"
+    )
+
+    if next_idx >= total:
+        accuracy = (correct / total * 100) if total else 0
+        await message.answer(
+            "🏁 Quiz yakunlandi!\n"
+            f"✅ To‘g‘ri: {correct}\n"
+            f"🟨 Yaqin: {close}\n"
+            f"❌ Noto‘g‘ri: {wrong}\n"
+            f"⭐ Jami ball: {score}\n"
+            f"📈 Aniqlik: {accuracy:.0f}%\n\n"
+            "Ajoyib ish! Davom eting! 💪",
+            reply_markup=quiz_done_kb(),
+        )
+        await state.clear()
+        return
+
+    next_question = questions[next_idx]
+    await state.update_data(
+        idx=next_idx,
+        score=score,
+        correct=correct,
+        close=close,
+        wrong=wrong,
+        current_word_id=next_question["word_id"],
+        reference=next_question["word"],
+    )
+    await message.answer(
+        _quiz_prompt(next_question["word"], next_idx + 1, total),
+        reply_markup=quiz_kb(),
+        parse_mode="Markdown",
+    )
+
+
+@router.callback_query(F.data == "pron:quiz:stop")
+async def pron_quiz_stop(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("🛑 Quiz to‘xtatildi")
+    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    await callback.answer()
+
+
+@router.message(F.voice)
+async def pron_voice_handler(message: Message, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current not in {
+        PronunciationStates.waiting_voice_single.state,
+        PronunciationStates.quiz_active.state,
+    }:
+        return
+
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, message.from_user.id)
+        user_settings = await get_or_create_user_settings(session, user)
+        if not user_settings.pronunciation_enabled:
+            await message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+            await state.clear()
+            return
+        if current == PronunciationStates.waiting_voice_single.state and user_settings.pronunciation_mode == "quiz":
+            await message.answer("ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan.")
+            await state.clear()
+            return
+        if current == PronunciationStates.quiz_active.state and user_settings.pronunciation_mode == "single":
+            await message.answer("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
+            await state.clear()
+            return
+        if user_settings.daily_limit_enabled and user_settings.daily_pronunciation_limit > 0:
+            used = await get_today_pronunciation_count(session, user.id)
+            if used >= user_settings.daily_pronunciation_limit:
+                await message.answer("⚠️ Bugungi talaffuz limitiga yetdingiz 🙂")
+                return
+
+    data = await state.get_data()
+    if data.get("stt_processing"):
+        await message.answer("⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂")
+        return
+
+    lock = _LOCKS.setdefault(message.from_user.id, asyncio.Lock())
+    if lock.locked():
+        await message.answer("⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂")
+        return
+
+    await state.update_data(stt_processing=True)
+    try:
+        async with lock:
+            if current == PronunciationStates.waiting_voice_single.state:
+                await _handle_single_voice(message, state)
+            else:
+                await _handle_quiz_voice(message, state)
+    finally:
+        await state.update_data(stt_processing=False)

@@ -15,6 +15,13 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
     return result.scalar_one_or_none()
 
 
+async def get_or_create_user(session: AsyncSession, telegram_id: int) -> User:
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user:
+        return user
+    return await create_user(session, telegram_id)
+
+
 async def create_user(session: AsyncSession, telegram_id: int) -> User:
     user = User(
         telegram_id=telegram_id,
