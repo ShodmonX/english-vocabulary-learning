@@ -4,10 +4,14 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 def main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Mashq", callback_data="menu:training")],
-            [InlineKeyboardButton(text="So‘z qo‘shish", callback_data="menu:add_word")],
-            [InlineKeyboardButton(text="Statistika", callback_data="menu:stats")],
-            [InlineKeyboardButton(text="Sozlamalar", callback_data="menu:settings")],
+            [
+                InlineKeyboardButton(text="Mashq", callback_data="menu:training"),
+                InlineKeyboardButton(text="So‘z qo‘shish", callback_data="menu:add_word"),
+            ],
+            [
+                InlineKeyboardButton(text="Statistika", callback_data="menu:stats"),
+                InlineKeyboardButton(text="Sozlamalar", callback_data="menu:settings"),
+            ],
         ]
     )
 
@@ -33,11 +37,13 @@ def training_kb(show_meaning: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def settings_kb() -> InlineKeyboardMarkup:
+def settings_kb(reminder_enabled: bool = True) -> InlineKeyboardMarkup:
+    reminder_label = "Eslatma: ON" if reminder_enabled else "Eslatma: OFF"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Kunlik maqsad", callback_data="settings:daily_goal")],
             [InlineKeyboardButton(text="Eslatma vaqti", callback_data="settings:reminder_time")],
+            [InlineKeyboardButton(text=reminder_label, callback_data="settings:reminder_toggle")],
             [InlineKeyboardButton(text="Orqaga", callback_data="settings:back")],
         ]
     )
