@@ -6,9 +6,9 @@ Telegram bot ingliz tili so‘zlarini “Spaced Repetition” asosida yodlash uc
 - /start ro‘yxatdan o‘tkazadi va menyu chiqaradi
 - So‘z qo‘shish (wizard): word → translation → example (ixtiyoriy) → pos (ixtiyoriy)
 - Mashq (SRS): karta navbat bilan chiqadi, “Bilardim / Unutdim / O‘tkazib yuborish”
-- Statistika: bugungi reviewlar, jami so‘zlar, due soni
-- Sozlamalar: daily_goal va reminder_time
-- Har kuni eslatma: belgilangan vaqtda “Mashq vaqti” xabari
+- Statistika: bugungi reviewlar, aniqlik (%), weekly summary
+- Sozlamalar: daily_goal, reminder_time, reminder ON/OFF
+- Har kuni eslatma: belgilangan vaqtda “Mashq vaqti” xabari (due bo‘lsa)
 
 ## Env sozlash
 `.env` fayl yarating:
@@ -22,6 +22,23 @@ LOG_LEVEL=INFO
 - daily_goal: 10
 - reminder_time: 20:00
 - timezone: Asia/Tashkent (hozircha qat’iy)
+
+## SRS modeli (yangilangan)
+- Har karta uchun `ease_factor` (default 2.5) va `interval_days` saqlanadi
+- “Bilardim” → `ease_factor` sekin oshadi, interval yangilanadi
+- “Unutdim” → `ease_factor` kamayadi (min 1.3)
+- due_at: `interval_days * ease_factor` asosida hisoblanadi
+
+## Reminder ON/OFF
+- Sozlamalarda eslatmani yoqish/o‘chirish mumkin
+- Agar due bo‘lmasa, eslatma yuborilmaydi
+
+## Upgrade checklist
+- [ ] `.env` to‘ldirildi (BOT_TOKEN, DATABASE_URL, LOG_LEVEL)
+- [ ] `docker compose up --build` muvaffaqiyatli ishladi
+- [ ] `alembic upgrade head` migratsiyalarni o‘tkazdi
+- [ ] SRS (ease_factor/interval_days) ishlayapti
+- [ ] Reminder ON/OFF va due-check tekshirildi
 
 ## Lokal ishga tushirish (Docker)
 ```
