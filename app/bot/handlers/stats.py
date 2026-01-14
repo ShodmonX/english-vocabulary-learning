@@ -19,7 +19,7 @@ async def show_stats(callback: CallbackQuery) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("Avval /start buyrug‘ini bosing.")
+            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await callback.answer()
             return
 
@@ -38,9 +38,9 @@ async def show_stats(callback: CallbackQuery) -> None:
         )
 
     text = (
-        "Bugungi statistika:\n"
-        f"Bilardim: {today_stats['known']}\n"
-        f"Unutdim: {today_stats['forgot']}\n"
+        "📊 Bugungi natijalar:\n"
+        f"Bilganingiz: {today_stats['known']}\n"
+        f"Qayta ko‘riladiganlar: {today_stats['forgot']}\n"
         f"O‘tkazib yuborildi: {today_stats['skip']}\n\n"
         f"Jami: {total_today}\n"
         f"Aniqlik: {accuracy:.0f}%\n\n"
@@ -48,6 +48,7 @@ async def show_stats(callback: CallbackQuery) -> None:
         f"Due so‘zlar: {due_count}\n\n"
         "Oxirgi 7 kun:\n"
         + "\n".join(weekly_lines)
+        + "\n\n💡 Davom eting, natija albatta bo‘ladi!"
     )
     await callback.message.answer(text, reply_markup=main_menu_kb())
     await callback.answer()

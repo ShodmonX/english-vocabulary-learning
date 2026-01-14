@@ -55,5 +55,6 @@ class ReminderService:
                 return
 
         await bot.send_message(
-            telegram_id, "Mashq vaqti! \nBugungi mashg‘ulotni boshlaymizmi?"
+            telegram_id,
+            "⏰ Mashq vaqti!\nBugun bir nechta so‘zlar sizni kutyapti 📚😉",
         )

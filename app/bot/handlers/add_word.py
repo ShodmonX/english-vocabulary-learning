@@ -30,7 +30,7 @@ def _normalize_optional(value: str) -> str | None:
 async def start_add_word(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddWordStates.word)
-    await callback.message.answer("So‘z kiriting:")
+    await callback.message.answer("✍️ Yangi so‘zni yozing:")
     await callback.answer()
 
 
@@ -38,19 +38,19 @@ async def start_add_word(callback: CallbackQuery, state: FSMContext) -> None:
 async def add_word_word(message: Message, state: FSMContext) -> None:
     word = message.text.strip()
     if not word:
-        await message.answer("So‘z bo‘sh bo‘lmasin. Qaytadan kiriting:")
+        await message.answer("⚠️ So‘z bo‘sh bo‘lmasin. Yana bir bor yozing 🙂")
         return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("Avval /start buyrug‘ini bosing.")
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await state.clear()
             return
         existing = await get_word_by_user_word(session, user.id, word)
         if existing:
             text = (
-                "Already exists. Bu so‘z allaqachon mavjud:\n"
+                "🙂 Bu so‘z avval qo‘shilgan. Mana mavjud yozuv:\n"
                 f"So‘z: {existing.word}\n"
                 f"Tarjima: {existing.translation}\n"
             )
@@ -64,19 +64,19 @@ async def add_word_word(message: Message, state: FSMContext) -> None:
 
     await state.update_data(word=word)
     await state.set_state(AddWordStates.translation)
-    await message.answer("Tarjima kiriting:")
+    await message.answer("📝 Endi tarjimasini kiriting:")
 
 
 @router.message(AddWordStates.translation)
 async def add_word_translation(message: Message, state: FSMContext) -> None:
     translation = message.text.strip()
     if not translation:
-        await message.answer("Tarjima bo‘sh bo‘lmasin. Qaytadan kiriting:")
+        await message.answer("⚠️ Tarjima bo‘sh bo‘lmasin. Yana bir bor yozing 🙂")
         return
 
     await state.update_data(translation=translation)
     await state.set_state(AddWordStates.example)
-    await message.answer("Misol yozing (ixtiyoriy). Agar yo‘q bo‘lsa, '-' yozing:")
+    await message.answer("📌 Misol bo‘lsa yozing (ixtiyoriy). Yo‘q bo‘lsa, '-' yozing:")
 
 
 @router.message(AddWordStates.example)
@@ -84,7 +84,7 @@ async def add_word_example(message: Message, state: FSMContext) -> None:
     example = _normalize_optional(message.text)
     await state.update_data(example=example)
     await state.set_state(AddWordStates.pos)
-    await message.answer("So‘z turkumini yozing (ixtiyoriy). Agar yo‘q bo‘lsa, '-' yozing:")
+    await message.answer("🏷️ So‘z turkumini yozing (ixtiyoriy). Yo‘q bo‘lsa, '-' yozing:")
 
 
 @router.message(AddWordStates.pos)
@@ -95,7 +95,7 @@ async def add_word_pos(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("Avval /start buyrug‘ini bosing.")
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await state.clear()
             return
         try:
@@ -109,14 +109,19 @@ async def add_word_pos(message: Message, state: FSMContext) -> None:
             )
         except IntegrityError:
             await message.answer(
-                "Already exists. Bu so‘z allaqachon mavjud. Qaytadan urinib ko‘ring."
+                "🙂 Bu so‘z allaqachon mavjud. Yana bir bor tekshirib ko‘ring."
             )
             await state.clear()
             return
         except Exception:
-            await message.answer("Xatolik yuz berdi. Qaytadan urinib ko‘ring.")
+            await message.answer(
+                "⚠️ Nimadir xato ketdi. Yana bir bor urinib ko‘ring 🙂"
+            )
             await state.clear()
             return
 
-    await message.answer("So‘z muvaffaqiyatli qo‘shildi!", reply_markup=main_menu_kb())
+    await message.answer(
+        "✅ Zo‘r! So‘z bazaga qo‘shildi. Endi uni mashqda ko‘ramiz 💪",
+        reply_markup=main_menu_kb(),
+    )
     await state.clear()

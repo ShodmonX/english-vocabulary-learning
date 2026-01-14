@@ -30,25 +30,25 @@ async def open_settings(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("Avval /start buyrug‘ini bosing.")
+            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await callback.answer()
             return
         keyboard = settings_kb(user.reminder_enabled)
-    await callback.message.answer("Sozlamalar:", reply_markup=keyboard)
+    await callback.message.answer("⚙️ Sozlamalar:", reply_markup=keyboard)
     await callback.answer()
 
 
 @router.callback_query(F.data == "settings:back")
 async def settings_back(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    await callback.message.answer("⬅️ Bosh menyu", reply_markup=main_menu_kb())
     await callback.answer()
 
 
 @router.callback_query(F.data == "settings:daily_goal")
 async def settings_daily_goal(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SettingsStates.daily_goal)
-    await callback.message.answer("Kunlik maqsadni kiriting (5..100):")
+    await callback.message.answer("🎯 Kunlik maqsadni kiriting (5..100):")
     await callback.answer()
 
 
@@ -57,22 +57,25 @@ async def save_daily_goal(message: Message, state: FSMContext) -> None:
     try:
         value = int(message.text.strip())
     except ValueError:
-        await message.answer("Noto‘g‘ri format. 5..100 oralig‘ida son kiriting.")
+        await message.answer(
+            "⚠️ Hmm, bu format to‘g‘ri emas shekilli. Yana urinib ko‘ring 🙂"
+        )
         return
     if value < 5 or value > 100:
-        await message.answer("Noto‘g‘ri diapazon. 5..100 oralig‘ida kiriting.")
+        await message.answer("⚠️ 5..100 oralig‘ida kiriting 🙂")
         return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("Avval /start buyrug‘ini bosing.")
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await state.clear()
             return
         await update_daily_goal(session, user.id, value)
 
     await message.answer(
-        "Kunlik maqsad yangilandi.", reply_markup=settings_kb(user.reminder_enabled)
+        "✅ Kunlik maqsad yangilandi. Zo‘r ketayapsiz! 💪",
+        reply_markup=settings_kb(user.reminder_enabled),
     )
     await state.clear()
 
@@ -80,7 +83,7 @@ async def save_daily_goal(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "settings:reminder_time")
 async def settings_reminder_time(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SettingsStates.reminder_time)
-    await callback.message.answer("Eslatma vaqtini HH:MM formatida kiriting:")
+    await callback.message.answer("⏰ Eslatma vaqtini HH:MM formatida kiriting:")
     await callback.answer()
 
 
@@ -102,13 +105,15 @@ def _parse_time(value: str) -> time | None:
 async def save_reminder_time(message: Message, state: FSMContext) -> None:
     parsed = _parse_time(message.text)
     if not parsed:
-        await message.answer("Noto‘g‘ri format. Masalan: 20:00")
+        await message.answer(
+            "⚠️ Hmm, format noto‘g‘ri ko‘rinadi. Masalan: 20:00 🙂"
+        )
         return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("Avval /start buyrug‘ini bosing.")
+            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await state.clear()
             return
         await update_reminder_time(session, user.id, parsed)
@@ -119,7 +124,8 @@ async def save_reminder_time(message: Message, state: FSMContext) -> None:
         reminder_service.schedule_user(message.from_user.id, parsed, "Asia/Tashkent")
 
     await message.answer(
-        "Eslatma vaqti yangilandi.", reply_markup=settings_kb(user.reminder_enabled)
+        "✅ Eslatma vaqti yangilandi. Esdan chiqarmaymiz! 🔔",
+        reply_markup=settings_kb(user.reminder_enabled),
     )
     await state.clear()
 
@@ -130,7 +136,7 @@ async def toggle_reminder(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("Avval /start buyrug‘ini bosing.")
+            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
             await callback.answer()
             return
         new_value = not user.reminder_enabled
@@ -142,10 +148,10 @@ async def toggle_reminder(callback: CallbackQuery, state: FSMContext) -> None:
         reminder_service.schedule_user(
             callback.from_user.id, user.reminder_time, "Asia/Tashkent"
         )
-        text = "Eslatma yoqildi."
+        text = "🔔 Eslatma yoqildi. Endi sizni eslatib turaman 🙂"
     else:
         reminder_service.remove_user(callback.from_user.id)
-        text = "Eslatma o‘chirildi."
+        text = "🔕 Eslatma o‘chirildi. Xohlasangiz keyin yoqamiz 🙂"
 
     await callback.message.answer(text, reply_markup=settings_kb(new_value))
     await callback.answer()

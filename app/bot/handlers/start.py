@@ -21,8 +21,15 @@ async def cmd_start(message: Message) -> None:
                 reminder_service.schedule_user(
                     message.from_user.id, user.reminder_time, user.timezone
                 )
-            text = "Xush kelibsiz! Siz ro‘yxatdan o‘tdingiz."
+            text = (
+                "👋 Assalomu alaykum! Ingliz tilini o‘rganishni bugun boshlaymizmi? 🇬🇧✨\n"
+                "Keling, har kuni oz-ozdan, lekin samarali o‘rganamiz!\n"
+                "Pastdagi menyudan mashqni boshlang yoki yangi so‘z qo‘shing."
+            )
         else:
-            text = "Xush kelibsiz!"
+            text = (
+                "👋 Assalomu alaykum! Qaytganingizdan xursandman.\n"
+                "Quyidagi menyudan davom etishni tanlang 😊"
+            )
 
     await message.answer(text, reply_markup=main_menu_kb())
