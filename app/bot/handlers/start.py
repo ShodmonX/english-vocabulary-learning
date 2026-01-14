@@ -17,9 +17,10 @@ async def cmd_start(message: Message) -> None:
             user = await create_user(session, message.from_user.id)
             from app.main import reminder_service
 
-            reminder_service.schedule_user(
-                message.from_user.id, user.reminder_time, user.timezone
-            )
+            if user.reminder_enabled:
+                reminder_service.schedule_user(
+                    message.from_user.id, user.reminder_time, user.timezone
+                )
             text = "Xush kelibsiz! Siz ro‘yxatdan o‘tdingiz."
         else:
             text = "Xush kelibsiz!"

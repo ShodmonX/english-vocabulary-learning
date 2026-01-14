@@ -40,3 +40,10 @@ async def update_reminder_time(session: AsyncSession, user_id: int, reminder_tim
     user = result.scalar_one()
     user.reminder_time = reminder_time
     await session.commit()
+
+
+async def update_reminder_enabled(session: AsyncSession, user_id: int, enabled: bool) -> None:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one()
+    user.reminder_enabled = enabled
+    await session.commit()
