@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ReviewLog, Word
+from app.db.models import PronunciationLog, QuizSession, ReviewLog, Word
 
 
 async def get_today_review_stats(session: AsyncSession, user_id: int) -> dict[str, int]:
@@ -91,3 +91,27 @@ async def get_due_count(session: AsyncSession, user_id: int) -> int:
         )
     )
     return int(result.scalar_one())
+
+
+async def get_recent_quiz_results(
+    session: AsyncSession, user_id: int, limit: int = 5
+) -> list[QuizSession]:
+    result = await session.execute(
+        select(QuizSession)
+        .where(QuizSession.user_id == user_id, QuizSession.completed_at.is_not(None))
+        .order_by(QuizSession.completed_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_recent_pronunciation_results(
+    session: AsyncSession, user_id: int, limit: int = 5
+) -> list[PronunciationLog]:
+    result = await session.execute(
+        select(PronunciationLog)
+        .where(PronunciationLog.user_id == user_id, PronunciationLog.verdict.is_not(None))
+        .order_by(PronunciationLog.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())

@@ -10,7 +10,7 @@ from app.bot.keyboards.main import main_menu_kb
 from app.config import settings
 from app.bot.keyboards.quiz import quiz_options_kb
 from app.db.repo.srs import apply_review, get_due_words
-from app.db.repo.admin import log_quiz_session
+from app.db.repo.admin import finish_quiz_session, log_quiz_session
 from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_or_create_user, get_user_by_telegram_id
 from app.db.models import User, Word
@@ -79,6 +79,7 @@ async def _send_next_question(
     if index >= len(questions):
         text = _quiz_result_text(data.get("correct", 0), data.get("wrong", 0))
         user_db_id = data.get("user_id")
+        session_id = data.get("quiz_session_id")
         streak = 0
         is_admin = False
         async with AsyncSessionLocal() as session:
@@ -86,10 +87,15 @@ async def _send_next_question(
             if user:
                 streak = user.current_streak
                 is_admin = user.telegram_id in settings.admin_user_ids
-        await _edit_or_send(
-            message,
-            state,
-            text,
+            if session_id:
+                correct = data.get("correct", 0)
+                wrong = data.get("wrong", 0)
+                total = correct + wrong
+                accuracy = int((correct / total) * 100) if total else 0
+                await finish_quiz_session(session, session_id, total, correct, wrong, accuracy)
+        await _edit_or_send(message, state, text, reply_markup=None)
+        await message.answer(
+            "Bosh menyu",
             reply_markup=main_menu_kb(is_admin=is_admin, streak=streak),
         )
         await state.clear()
@@ -140,11 +146,16 @@ async def start_quiz_message(
         questions = build_quiz_questions(
             all_words, due_words, max_questions=user_settings.quiz_words_per_session
         )
-        await log_quiz_session(session, user.id)
+        quiz_session_id = await log_quiz_session(session, user.id)
 
     await state.set_state(QuizStates.in_quiz)
     await state.update_data(
-        questions=questions, index=0, correct=0, wrong=0, user_id=user.id
+        questions=questions,
+        index=0,
+        correct=0,
+        wrong=0,
+        user_id=user.id,
+        quiz_session_id=quiz_session_id,
     )
     await _send_next_question(message, state)
 
@@ -189,12 +200,29 @@ async def quiz_answer(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "quiz:exit")
 async def quiz_exit(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    quiz_message_id = data.get("quiz_message_id")
+    correct = data.get("correct", 0)
+    wrong = data.get("wrong", 0)
+    session_id = data.get("quiz_session_id")
     await state.clear()
+    if quiz_message_id:
+        try:
+            await callback.message.bot.delete_message(
+                chat_id=callback.message.chat.id,
+                message_id=quiz_message_id,
+            )
+        except TelegramBadRequest:
+            pass
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
+        if session_id:
+            total = correct + wrong
+            accuracy = int((correct / total) * 100) if total else 0
+            await finish_quiz_session(session, session_id, total, correct, wrong, accuracy)
     await callback.message.answer(
-        "🚪 Quiz yopildi. Keyin davom etamiz 🙂",
+        f"🚪 Quiz to‘xtatildi.\n\n{_quiz_result_text(correct, wrong)}",
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),

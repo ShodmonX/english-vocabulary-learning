@@ -27,8 +27,33 @@ async def log_admin_action(
     await session.commit()
 
 
-async def log_quiz_session(session: AsyncSession, user_id: int) -> None:
-    session.add(QuizSession(user_id=user_id))
+async def log_quiz_session(session: AsyncSession, user_id: int) -> int:
+    quiz = QuizSession(user_id=user_id)
+    session.add(quiz)
+    await session.commit()
+    await session.refresh(quiz)
+    return quiz.id
+
+
+async def finish_quiz_session(
+    session: AsyncSession,
+    session_id: int,
+    total_questions: int,
+    correct: int,
+    wrong: int,
+    accuracy: int,
+) -> None:
+    await session.execute(
+        update(QuizSession)
+        .where(QuizSession.id == session_id)
+        .values(
+            total_questions=total_questions,
+            correct=correct,
+            wrong=wrong,
+            accuracy=accuracy,
+            completed_at=datetime.utcnow(),
+        )
+    )
     await session.commit()
 
 

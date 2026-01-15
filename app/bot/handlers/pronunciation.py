@@ -10,6 +10,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
+from aiogram.exceptions import TelegramBadRequest
 
 from app.bot.keyboards.main import main_menu_kb
 from app.bot.keyboards.pronunciation import (
@@ -154,12 +155,20 @@ async def _cleanup_files(paths: list[Path]) -> None:
 
 
 async def _process_voice(
-    message: Message, state: FSMContext, user_id: int, reference: str
+    message: Message,
+    state: FSMContext,
+    user_id: int,
+    reference: str,
+    retry_prompt: str | None = None,
+    retry_markup=None,
 ) -> tuple[str, str | None, int | None] | None:
     if not message.voice:
         return None
     if message.voice.duration and message.voice.duration > MAX_VOICE_SECONDS:
-        await _edit_session_message(message, state, "⏱ Juda uzun. 5–10 soniya yuboring 🙂")
+        text = "⏱ Juda uzun. 5–10 soniya yuboring 🙂"
+        if retry_prompt:
+            text = f"{text}\n\n{retry_prompt}"
+        await _edit_session_message(message, state, text, reply_markup=retry_markup)
         return None
     ogg_path = None
     wav_path = None
@@ -167,14 +176,18 @@ async def _process_voice(
     try:
         ogg_path, size = await download_voice(message.bot, message.voice)
         if size > MAX_VOICE_BYTES:
-            await _edit_session_message(
-                message, state, "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
-            )
+            text = "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
+            if retry_prompt:
+                text = f"{text}\n\n{retry_prompt}"
+            await _edit_session_message(message, state, text, reply_markup=retry_markup)
             return None
         try:
             wav_path = await convert_to_wav(ogg_path)
         except RuntimeError:
-            await _edit_session_message(message, state, "⚠️ Ovozni qayta ishlay olmadim.")
+            text = "⚠️ Ovozni qayta ishlay olmadim."
+            if retry_prompt:
+                text = f"{text}\n\n{retry_prompt}"
+            await _edit_session_message(message, state, text, reply_markup=retry_markup)
             return None
         engine = _engine()
         start = time.monotonic()
@@ -190,9 +203,10 @@ async def _process_voice(
         )
         transcript = _normalize_transcript(result.transcript)
         if not transcript:
-            await _edit_session_message(
-                message, state, "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
-            )
+            text = "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
+            if retry_prompt:
+                text = f"{text}\n\n{retry_prompt}"
+            await _edit_session_message(message, state, text, reply_markup=retry_markup)
             return None
         if contains_bad_words(transcript):
             logger.info("STT_FILTERED user=%s transcript_len=%s", user_id, len(transcript))
@@ -208,17 +222,19 @@ async def _process_voice(
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
-        await _edit_session_message(
-            message, state, "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
-        )
+        text = "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        if retry_prompt:
+            text = f"{text}\n\n{retry_prompt}"
+        await _edit_session_message(message, state, text, reply_markup=retry_markup)
         return None
     except Exception:
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
-        await _edit_session_message(
-            message, state, "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
-        )
+        text = "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        if retry_prompt:
+            text = f"{text}\n\n{retry_prompt}"
+        await _edit_session_message(message, state, text, reply_markup=retry_markup)
         return None
     finally:
         paths = [p for p in [ogg_path, wav_path] if p]
@@ -394,13 +410,26 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
         await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta tanlang 🙂")
         return
     await _edit_session_message(message, state, "⏳ Tekshiryapman…")
-    result = await _process_voice(message, state, message.from_user.id, reference)
+    result = await _process_voice(
+        message,
+        state,
+        message.from_user.id,
+        reference,
+        retry_prompt=_single_prompt(reference),
+        retry_markup=single_word_kb(context, page),
+    )
     if not result:
         return
     verdict, transcript, _ = result
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, message.from_user.id)
-        await log_pronunciation(session, user.id)
+        await log_pronunciation(
+            session,
+            user.id,
+            verdict=verdict,
+            reference_word=reference,
+            mode="single",
+        )
     if transcript:
         await _edit_session_message(
             message,
@@ -435,15 +464,15 @@ async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.message.edit_text("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
             await callback.answer()
             return
-        all_words = await list_recent_words(session, user.id, 2000, 0)
-        if not all_words:
+        recent_words = await list_recent_words(
+            session, user.id, user_settings.quiz_words_per_session, 0
+        )
+        if not recent_words:
             await callback.message.edit_text("🫤 Avval so‘z qo‘shing ➕")
             await callback.answer()
             return
-        due_words = await get_due_words(session, user.id, user_settings.quiz_words_per_session)
-        pool = due_words if due_words else all_words
         questions = _build_pronunciation_questions(
-            pool, max_questions=user_settings.quiz_words_per_session
+            recent_words, max_questions=user_settings.quiz_words_per_session
         )
 
     if not questions:
@@ -484,7 +513,15 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta urinib ko‘ring 🙂")
         return
     await _edit_session_message(message, state, "⏳ Baholayapman…")
-    result = await _process_voice(message, state, message.from_user.id, reference)
+    retry_prompt = _quiz_prompt(reference, idx + 1, len(questions))
+    result = await _process_voice(
+        message,
+        state,
+        message.from_user.id,
+        reference,
+        retry_prompt=retry_prompt,
+        retry_markup=quiz_kb(),
+    )
     if not result:
         return
     verdict, transcript, _ = result
@@ -500,6 +537,16 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         close += 1
     else:
         wrong += 1
+
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, message.from_user.id)
+        await log_pronunciation(
+            session,
+            user.id,
+            verdict=verdict,
+            reference_word=reference,
+            mode="quiz",
+        )
 
     next_idx = idx + 1
     total = len(questions)
@@ -624,4 +671,8 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
             else:
                 await _handle_quiz_voice(message, state)
     finally:
+        try:
+            await message.delete()
+        except TelegramBadRequest:
+            pass
         await state.update_data(stt_processing=False)

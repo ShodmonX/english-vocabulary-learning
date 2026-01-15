@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Review, ReviewLog, TrainingSession, Word
+from app.db.models import Review, ReviewLog, TrainingSession, User, Word
 from app.services.srs import initial_ease_factor, initial_interval_days
 
 
@@ -42,6 +42,11 @@ async def create_word_with_review(
         srs_due_at=datetime.utcnow(),
     )
     session.add(new_word)
+    await session.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(word_count=User.word_count + 1)
+    )
     await session.commit()
     await session.refresh(new_word)
     return new_word
@@ -130,6 +135,11 @@ async def delete_word(session: AsyncSession, user_id: int, word_id: int) -> None
     )
     await session.execute(
         delete(Review).where(Review.word_id == word_id, Review.user_id == user_id)
+    )
+    await session.execute(
+        update(User)
+        .where(User.id == user_id, User.word_count > 0)
+        .values(word_count=User.word_count - 1)
     )
     await session.delete(word)
     await session.commit()

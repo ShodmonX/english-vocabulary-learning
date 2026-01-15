@@ -9,6 +9,7 @@ from app.bot.handlers.stats import show_stats_message
 from app.bot.handlers.practice.menu import practice_entry_text
 from app.bot.handlers.admin.entry import open_admin_panel
 from app.bot.handlers.admin.common import ensure_admin_message
+from app.bot.handlers.leaderboard.menu import open_leaderboard_menu
 
 router = Router()
 
@@ -50,6 +51,11 @@ async def menu_pronunciation(message: Message, state: FSMContext) -> None:
     from app.bot.handlers.pronunciation import open_pronunciation_menu
 
     await open_pronunciation_menu(message, state)
+
+
+@router.message(F.text == "🏆 Leaderboards")
+async def menu_leaderboards(message: Message, state: FSMContext) -> None:
+    await open_leaderboard_menu(message, state)
 
 
 @router.message(F.text == "🛠 Admin")

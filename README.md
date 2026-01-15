@@ -5,6 +5,7 @@ Telegram bot ingliz tili so‘zlarini “Spaced Repetition” asosida yodlash uc
 ## Asosiy funksiyalar
 - /start ro‘yxatdan o‘tkazadi va menyu chiqaradi
 - /help: yordam bo‘limi (bo‘limlar + navigatsiya)
+- /leaderboard: reytinglar (opt-in privacy)
 - So‘z qo‘shish (wizard): word → translation → example (ixtiyoriy) → pos (ixtiyoriy)
 - Mashq (SRS): karta navbat bilan chiqadi, 4 ta baholash (AGAIN/HARD/GOOD/EASY)
 - Statistika: bugungi reviewlar, aniqlik (%), weekly summary
@@ -68,6 +69,19 @@ LOG_LEVEL=INFO
 - Kuniga kamida 1 ta SRS review bo‘lsa streak saqlanadi
 - 2+ kun bo‘lsa summary’da “🔥 Ketma-ket X kun” ko‘rsatiladi
 - Asosiy menyuda indikator: “🔥 X kun”
+
+## Leaderboards (Privacy-safe)
+- 3 tur: 🔥 Streak, 🏆 Longest Streak, 📚 So‘zlar soni
+- Default: opt-in OFF (user rozi bo‘lmasa ko‘rinmaydi)
+- Public name va username ko‘rsatish (ixtiyoriy)
+- Chat spam yo‘q: edit-message + pagination
+
+### Leaderboards manual test
+1) /leaderboard → menu chiqishi
+2) Opt-in OFF holatda ham ro‘yxatni ko‘rish
+3) ⚙️ Reyting sozlamalari → opt-in ON
+4) Public name o‘rnatish
+5) Streak/Words TOP bo‘limlarini ko‘rish
 
 ## Pronunciation (MVP)
 - 🎯 Bitta so‘z tekshirish: oxirgilar yoki qidirish orqali so‘z tanlang, voice yuboring

@@ -4,18 +4,21 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardBu
 def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         [
-            KeyboardButton(text="📚 Mashq qilish"),
+            KeyboardButton(text="➕ So‘z qo‘shish"),
+            KeyboardButton(text="🗂 So‘zlarim"),
+        ],
+        [
+            KeyboardButton(text="🗣 Talaffuz"),
             KeyboardButton(text="🧩 Quiz"),
         ],
         [
-            KeyboardButton(text="➕ So‘z qo‘shish"),
+            KeyboardButton(text="📚 Mashq qilish"),
             KeyboardButton(text="📊 Natijalar"),
         ],
         [
-            KeyboardButton(text="🗂 So‘zlarim"),
+            KeyboardButton(text="🏆 Leaderboards"),
             KeyboardButton(text="⚙️ Sozlamalar"),
         ],
-        [KeyboardButton(text="🗣 Talaffuz")],
     ]
     if is_admin:
         keyboard.append([KeyboardButton(text="🛠 Admin")])

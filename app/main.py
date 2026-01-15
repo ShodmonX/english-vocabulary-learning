@@ -9,6 +9,7 @@ from app.bot.handlers import (
     add_word,
     admin,
     help,
+    leaderboard,
     manage_words,
     menu,
     practice,
@@ -42,6 +43,7 @@ async def setup_bot_commands(bot: Bot) -> None:
         [
             BotCommand(command="start", description="Botni ishga tushirish"),
             BotCommand(command="help", description="Yordam bo‘limi"),
+            BotCommand(command="leaderboard", description="Reytinglar"),
         ],
         scope=BotCommandScopeDefault(),
     )
@@ -68,6 +70,11 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.features_router)
     dp.include_router(admin.maintenance_router)
     dp.include_router(help.router)
+    dp.include_router(leaderboard.entry_router)
+    dp.include_router(leaderboard.menu_router)
+    dp.include_router(leaderboard.settings_router)
+    dp.include_router(leaderboard.streak_router)
+    dp.include_router(leaderboard.words_router)
     dp.include_router(start.router)
     dp.include_router(menu.router)
     dp.include_router(manage_words.router)

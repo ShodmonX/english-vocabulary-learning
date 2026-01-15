@@ -30,6 +30,11 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_current_streak", "current_streak"),
+        Index("ix_users_longest_streak", "longest_streak"),
+        Index("ix_users_word_count", "word_count"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
@@ -42,6 +47,7 @@ class User(Base):
     current_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     longest_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_review_date: Mapped[date | None] = mapped_column(Date)
+    word_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     words: Mapped[list[Word]] = relationship("Word", back_populates="user")
@@ -71,6 +77,17 @@ class UserSettings(Base):
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notification_time: Mapped[time | None] = mapped_column(Time)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class UserPublicProfile(Base):
+    __tablename__ = "user_public_profiles"
+    __table_args__ = (Index("ix_user_public_profiles_opt_in", "leaderboard_opt_in"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    leaderboard_opt_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    public_name: Mapped[str | None] = mapped_column(String(64))
+    show_username: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
@@ -137,6 +154,11 @@ class QuizSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    total_questions: Mapped[int | None] = mapped_column(Integer)
+    correct: Mapped[int | None] = mapped_column(Integer)
+    wrong: Mapped[int | None] = mapped_column(Integer)
+    accuracy: Mapped[int | None] = mapped_column(Integer)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -145,6 +167,9 @@ class PronunciationLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    verdict: Mapped[str | None] = mapped_column(String(16))
+    reference_word: Mapped[str | None] = mapped_column(String(128))
+    mode: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

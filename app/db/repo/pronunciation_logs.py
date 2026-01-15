@@ -6,8 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import PronunciationLog
 
 
-async def log_pronunciation(session: AsyncSession, user_id: int) -> None:
-    session.add(PronunciationLog(user_id=user_id))
+async def log_pronunciation(
+    session: AsyncSession,
+    user_id: int,
+    verdict: str | None = None,
+    reference_word: str | None = None,
+    mode: str | None = None,
+) -> None:
+    session.add(
+        PronunciationLog(
+            user_id=user_id,
+            verdict=verdict,
+            reference_word=reference_word,
+            mode=mode,
+        )
+    )
     await session.commit()
 
 
