@@ -4,8 +4,9 @@ Telegram bot ingliz tili so‘zlarini “Spaced Repetition” asosida yodlash uc
 
 ## Asosiy funksiyalar
 - /start ro‘yxatdan o‘tkazadi va menyu chiqaradi
+- /help: yordam bo‘limi (bo‘limlar + navigatsiya)
 - So‘z qo‘shish (wizard): word → translation → example (ixtiyoriy) → pos (ixtiyoriy)
-- Mashq (SRS): karta navbat bilan chiqadi, “Bilardim / Unutdim / O‘tkazib yuborish”
+- Mashq (SRS): karta navbat bilan chiqadi, 4 ta baholash (AGAIN/HARD/GOOD/EASY)
 - Statistika: bugungi reviewlar, aniqlik (%), weekly summary
 - Sozlamalar: modul bo‘limlar (o‘rganish, testlar, til/tarjima, eslatmalar, cheklovlar)
 - Har kuni eslatma: belgilangan vaqtda “Mashq vaqti” xabari (due bo‘lsa)
@@ -29,11 +30,15 @@ LOG_LEVEL=INFO
 - Talaffuz limiti: 10 (limitlar ON)
 - Timezone: Asia/Tashkent (hozircha qat’iy)
 
-## SRS modeli (yangilangan)
-- Har karta uchun `ease_factor` (default 2.5) va `interval_days` saqlanadi
-- “Bilardim” → `ease_factor` sekin oshadi, interval yangilanadi
-- “Unutdim” → `ease_factor` kamayadi (min 1.3)
-- due_at: `interval_days * ease_factor` asosida hisoblanadi
+## SRS modeli (SM-2)
+- Har so‘z uchun `srs_repetitions`, `srs_interval_days`, `srs_ease_factor`, `srs_due_at` saqlanadi
+- 4 ta rating SM-2 algoritmiga mos:
+  - 😕 Bilmayman (AGAIN = 0)
+  - 😐 Qiyin (HARD = 3)
+  - 🙂 Yaxshi (GOOD = 4)
+  - 😄 Oson (EASY = 5)
+- EF formulasi: `EF' = EF + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))`, min 1.3
+- Repetitions va interval SM-2 bo‘yicha yangilanadi, due_at = now + interval_days
 
 ## Reminder ON/OFF
 - Sozlamalarda eslatmani yoqish/o‘chirish mumkin
@@ -52,6 +57,17 @@ LOG_LEVEL=INFO
 - Kamida 4 ta so‘z bo‘lsa ishga tushadi
 - 10 ta savolgacha, har savolda 4 variant
 - To‘g‘ri/xato javoblar SRS’ga ta’sir qiladi
+
+## Practice (SRS-first)
+- Mashq faqat `due` so‘zlar bilan ishlaydi
+- Due=0 bo‘lsa, bot yangi so‘zlar bilan mashq qilishni so‘raydi
+- Edit-message ishlaydi, chat spam bo‘lmaydi
+- Baholash: AGAIN / HARD / GOOD / EASY
+
+## Streak
+- Kuniga kamida 1 ta SRS review bo‘lsa streak saqlanadi
+- 2+ kun bo‘lsa summary’da “🔥 Ketma-ket X kun” ko‘rsatiladi
+- Asosiy menyuda indikator: “🔥 X kun”
 
 ## Pronunciation (MVP)
 - 🎯 Bitta so‘z tekshirish: oxirgilar yoki qidirish orqali so‘z tanlang, voice yuboring
@@ -98,11 +114,43 @@ GOOGLE_TRANSLATE_TIMEOUT_SECONDS=15
 5) ⚙️ Sozlamalar → ⚡ Cheklovlar → talaffuz limiti (0 bo‘lsa cheksiz)
 6) ⚙️ Sozlamalar → 🛠 Texnik → reset
 
+## Admin Panel
+- /admin faqat `ADMIN_USER_IDS` ro‘yxatidagi userlar uchun
+- Bo‘limlar: Statistika, Users, SRS, Kontent, Feature flag’lar, Maintenance
+- Feature flag’lar global override qiladi (quiz/pronunciation/practice/translation)
+
+### Admin manual test
+1) `.env` ga `ADMIN_USER_IDS` qo‘shing
+2) /admin → 📊 Umumiy statistika
+3) 👥 User qidirish → bloklash/ochish
+4) 🧠 SRS reset (confirm bilan)
+5) ⚙️ Feature flag’lar → quiz/pronunciation/practice/translation toggle
+6) 🧪 Debug → FSM reset / loglar
+
+## Help manual test
+1) /help → bo‘limlar chiqishi
+2) Tez start → orqaga → boshqa bo‘lim
+3) Pronunciation o‘chiq bo‘lsa status ko‘rsin
+4) Admin userda “🛠 Admin” bo‘limi ko‘rinsin
+
+## Practice manual test
+1) Due=0 bo‘lsa: “Yangi so‘zlar bilan mashq qilamizmi?” prompt chiqadi
+2) Due bor bo‘lsa: ⚡ Tezkor mashq (show → rate → next)
+3) 🧠 O‘ylab javob berish → text javob → baholash
+4) 🛑 To‘xtatish → summary chiqishi
+5) 🔁 Yana mashq / 🧠 Rejimni almashtirish
+
+## SM-2 test
+```
+python scripts/sm2_test.py
+```
+
 ## Upgrade checklist
 - [ ] `.env` to‘ldirildi (BOT_TOKEN, DATABASE_URL, LOG_LEVEL)
+- [ ] ADMIN_USER_IDS qo‘shildi (agar admin kerak bo‘lsa)
 - [ ] `docker compose up --build` muvaffaqiyatli ishladi
 - [ ] `alembic upgrade head` migratsiyalarni o‘tkazdi
-- [ ] SRS (ease_factor/interval_days) ishlayapti
+- [ ] SRS (SM-2: repetitions/interval/EF/due) ishlayapti
 - [ ] Reminder ON/OFF va due-check tekshirildi
 - [ ] Settings bo‘limlari (Learning/Tests/Language/Notifications/Limits/Advanced) tekshirildi
 

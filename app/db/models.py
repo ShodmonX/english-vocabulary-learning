@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -32,10 +33,15 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(64))
     daily_goal: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     reminder_time: Mapped[time] = mapped_column(Time, default=time(20, 0), nullable=False)
     reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Tashkent")
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_review_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     words: Mapped[list[Word]] = relationship("Word", back_populates="user")
@@ -73,6 +79,7 @@ class Word(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "word", name="uq_words_user_word"),
         Index("ix_words_user_created", "user_id", "created_at"),
+        Index("ix_words_user_srs_due", "user_id", "srs_due_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -82,6 +89,12 @@ class Word(Base):
     example: Mapped[str | None] = mapped_column(Text)
     pos: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    srs_repetitions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    srs_interval_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    srs_ease_factor: Mapped[float] = mapped_column(Float, default=2.5, nullable=False)
+    srs_due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    srs_last_review_at: Mapped[datetime | None] = mapped_column(DateTime)
+    srs_lapses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     user: Mapped[User] = relationship("User", back_populates="words")
     review: Mapped[Review] = relationship("Review", back_populates="word", uselist=False)
@@ -110,6 +123,20 @@ class ReviewLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     word_id: Mapped[int] = mapped_column(ForeignKey("words.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
+    q: Mapped[int | None] = mapped_column(Integer)
+    ef_before: Mapped[float | None] = mapped_column(Float)
+    ef_after: Mapped[float | None] = mapped_column(Float)
+    interval_before: Mapped[int | None] = mapped_column(Integer)
+    interval_after: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class QuizSession(Base):
+    __tablename__ = "quiz_sessions"
+    __table_args__ = (Index("ix_quiz_sessions_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -141,10 +168,30 @@ class TranslationCache(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AdminAuditLog(Base):
+    __tablename__ = "admin_audit_logs"
+    __table_args__ = (Index("ix_admin_audit_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class TrainingSession(Base):
     __tablename__ = "training_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
-    current_review_id: Mapped[int | None] = mapped_column(ForeignKey("reviews.id"))
+    current_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

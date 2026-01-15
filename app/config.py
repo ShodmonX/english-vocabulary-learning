@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     google_translate_api_key: str | None = None
     google_translate_url: str = "https://translation.googleapis.com/language/translate/v2"
     google_translate_timeout_seconds: int = 15
+    admin_user_ids: set[int] = set()
 
     @field_validator("log_level")
     @classmethod
@@ -25,6 +26,21 @@ class Settings(BaseSettings):
         if normalized not in allowed:
             raise ValueError("LOG_LEVEL noto‘g‘ri qiymat")
         return normalized
+
+    @field_validator("admin_user_ids", mode="before")
+    @classmethod
+    def parse_admin_ids(cls, value: str | set[int]) -> set[int]:
+        if isinstance(value, set):
+            return value
+        if not value:
+            return set()
+        ids: set[int] = set()
+        for part in str(value).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            ids.add(int(part))
+        return ids
 
 
 settings = Settings()

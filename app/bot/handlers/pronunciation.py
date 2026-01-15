@@ -27,12 +27,13 @@ from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_or_create_user
 from app.db.repo.words import get_word, list_recent_words, search_words
 from app.db.session import AsyncSessionLocal
+from app.services.feature_flags import is_feature_enabled
 from app.services.pronunciation.base import PronunciationEngine
 from app.services.pronunciation.stt_engine import STTPronunciationEngine
 from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
 from app.services.stt.local_whisper import LocalWhisperSTT
-from app.db.repo.reviews import get_due_reviews
+from app.db.repo.srs import get_due_words
 from app.utils.audio import convert_to_wav, download_voice
 
 router = Router()
@@ -72,6 +73,31 @@ def _verdict_text(verdict: str) -> str:
     if verdict == "close":
         return "🟨 Yaqin"
     return "❌ Noto‘g‘ri"
+
+
+async def _edit_session_message(
+    message: Message,
+    state: FSMContext,
+    text: str,
+    reply_markup=None,
+    parse_mode: str | None = None,
+) -> None:
+    data = await state.get_data()
+    message_id = data.get("pron_message_id")
+    if message_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return
+        except Exception:
+            pass
+    sent = await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    await state.update_data(pron_message_id=sent.message_id)
 
 
 def _build_pronunciation_questions(words: list[object], max_questions: int = 10) -> list[dict[str, object]]:
@@ -128,12 +154,12 @@ async def _cleanup_files(paths: list[Path]) -> None:
 
 
 async def _process_voice(
-    message: Message, user_id: int, reference: str
+    message: Message, state: FSMContext, user_id: int, reference: str
 ) -> tuple[str, str | None, int | None] | None:
     if not message.voice:
         return None
     if message.voice.duration and message.voice.duration > MAX_VOICE_SECONDS:
-        await message.answer("⏱ Juda uzun. 5–10 soniya yuboring 🙂")
+        await _edit_session_message(message, state, "⏱ Juda uzun. 5–10 soniya yuboring 🙂")
         return None
     ogg_path = None
     wav_path = None
@@ -141,12 +167,14 @@ async def _process_voice(
     try:
         ogg_path, size = await download_voice(message.bot, message.voice)
         if size > MAX_VOICE_BYTES:
-            await message.answer("⏱ Juda katta fayl. 5–10 soniya yuboring 🙂")
+            await _edit_session_message(
+                message, state, "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
+            )
             return None
         try:
             wav_path = await convert_to_wav(ogg_path)
         except RuntimeError:
-            await message.answer("⚠️ Ovozni qayta ishlay olmadim.")
+            await _edit_session_message(message, state, "⚠️ Ovozni qayta ishlay olmadim.")
             return None
         engine = _engine()
         start = time.monotonic()
@@ -162,7 +190,9 @@ async def _process_voice(
         )
         transcript = _normalize_transcript(result.transcript)
         if not transcript:
-            await message.answer("🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting.")
+            await _edit_session_message(
+                message, state, "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
+            )
             return None
         if contains_bad_words(transcript):
             logger.info("STT_FILTERED user=%s transcript_len=%s", user_id, len(transcript))
@@ -178,13 +208,17 @@ async def _process_voice(
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
-        await message.answer("⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂")
+        await _edit_session_message(
+            message, state, "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        )
         return None
     except Exception:
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
-        await message.answer("⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂")
+        await _edit_session_message(
+            message, state, "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        )
         return None
     finally:
         paths = [p for p in [ogg_path, wav_path] if p]
@@ -199,6 +233,10 @@ async def open_pronunciation_menu(message: Message, state: FSMContext) -> None:
     user_id = await _require_user(message)
     if not user_id:
         return
+    async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, "pronunciation"):
+            await message.answer("🛑 Hozircha talaffuz o‘chirilgan.")
+            return
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, user_id)
         user_settings = await get_or_create_user_settings(session, user)
@@ -226,6 +264,10 @@ async def pron_menu_back(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "pron:menu:single")
 async def pron_single_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, "pronunciation"):
+            await callback.message.answer("🛑 Hozircha talaffuz o‘chirilgan.")
+            await callback.answer()
+            return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
     if not user_settings.pronunciation_enabled:
@@ -288,7 +330,13 @@ async def pron_pick_word(callback: CallbackQuery, state: FSMContext) -> None:
         return
 
     await state.set_state(PronunciationStates.waiting_voice_single)
-    await state.update_data(word_id=word_id_int, reference=word.word, context=context, page=page_int)
+    await state.update_data(
+        word_id=word_id_int,
+        reference=word.word,
+        context=context,
+        page=page_int,
+        pron_message_id=callback.message.message_id,
+    )
     await callback.message.edit_text(
         _single_prompt(word.word), reply_markup=single_word_kb(context, page_int), parse_mode="Markdown"
     )
@@ -313,7 +361,15 @@ async def pron_back(callback: CallbackQuery, state: FSMContext) -> None:
 async def pron_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("🏁 Menyuga qaytdik", reply_markup=None)
-    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        streak = user.current_streak
+    await callback.message.answer(
+        "Bosh menyu",
+        reply_markup=main_menu_kb(
+            is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
+        ),
+    )
     await callback.answer()
 
 
@@ -335,10 +391,10 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
     context = data.get("context", "recent")
     page = int(data.get("page", 0))
     if not reference:
-        await message.answer("⚠️ So‘z topilmadi. Qayta tanlang 🙂")
+        await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta tanlang 🙂")
         return
-    await message.answer("⏳ Tekshiryapman…")
-    result = await _process_voice(message, message.from_user.id, reference)
+    await _edit_session_message(message, state, "⏳ Tekshiryapman…")
+    result = await _process_voice(message, state, message.from_user.id, reference)
     if not result:
         return
     verdict, transcript, _ = result
@@ -346,12 +402,16 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
         user = await get_or_create_user(session, message.from_user.id)
         await log_pronunciation(session, user.id)
     if transcript:
-        await message.answer(
+        await _edit_session_message(
+            message,
+            state,
             f"{_verdict_text(verdict)}\n📝 Men eshitganim: {transcript}",
             reply_markup=single_result_kb(context, page),
         )
     else:
-        await message.answer(
+        await _edit_session_message(
+            message,
+            state,
             f"{_verdict_text(verdict)}\n⚠️ Natija xavfsizlik sababli ko‘rsatilmadi.",
             reply_markup=single_result_kb(context, page),
         )
@@ -361,6 +421,10 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
 async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, "pronunciation"):
+            await callback.message.edit_text("🛑 Hozircha talaffuz o‘chirilgan.")
+            await callback.answer()
+            return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
         if not user_settings.pronunciation_enabled:
@@ -376,8 +440,7 @@ async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.message.edit_text("🫤 Avval so‘z qo‘shing ➕")
             await callback.answer()
             return
-        due_reviews = await get_due_reviews(session, user.id)
-        due_words = [review.word for review in due_reviews]
+        due_words = await get_due_words(session, user.id, user_settings.quiz_words_per_session)
         pool = due_words if due_words else all_words
         questions = _build_pronunciation_questions(
             pool, max_questions=user_settings.quiz_words_per_session
@@ -402,7 +465,11 @@ async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         _quiz_prompt(first["word"], 1, total), reply_markup=quiz_kb(), parse_mode="Markdown"
     )
-    await state.update_data(current_word_id=first["word_id"], reference=first["word"])
+    await state.update_data(
+        current_word_id=first["word_id"],
+        reference=first["word"],
+        pron_message_id=callback.message.message_id,
+    )
     await callback.answer()
 
 
@@ -414,10 +481,10 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         return
     reference = data.get("reference")
     if not reference:
-        await message.answer("⚠️ So‘z topilmadi. Qayta urinib ko‘ring 🙂")
+        await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta urinib ko‘ring 🙂")
         return
-    await message.answer("⏳ Baholayapman…")
-    result = await _process_voice(message, message.from_user.id, reference)
+    await _edit_session_message(message, state, "⏳ Baholayapman…")
+    result = await _process_voice(message, state, message.from_user.id, reference)
     if not result:
         return
     verdict, transcript, _ = result
@@ -441,7 +508,7 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         if transcript
         else "⚠️ Natija xavfsizlik sababli ko‘rsatilmadi."
     )
-    await message.answer(
+    feedback = (
         f"Natija: {_verdict_text(verdict)}\n"
         f"{transcript_line}\n"
         f"⭐ Ball: +{2 if verdict == 'correct' else 1 if verdict == 'close' else 0} | Jami: {score}"
@@ -449,7 +516,9 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
 
     if next_idx >= total:
         accuracy = (correct / total * 100) if total else 0
-        await message.answer(
+        await _edit_session_message(
+            message,
+            state,
             "🏁 Quiz yakunlandi!\n"
             f"✅ To‘g‘ri: {correct}\n"
             f"🟨 Yaqin: {close}\n"
@@ -472,8 +541,10 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         current_word_id=next_question["word_id"],
         reference=next_question["word"],
     )
-    await message.answer(
-        _quiz_prompt(next_question["word"], next_idx + 1, total),
+    await _edit_session_message(
+        message,
+        state,
+        f"{feedback}\n\n{_quiz_prompt(next_question['word'], next_idx + 1, total)}",
         reply_markup=quiz_kb(),
         parse_mode="Markdown",
     )
@@ -483,7 +554,15 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
 async def pron_quiz_stop(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("🛑 Quiz to‘xtatildi")
-    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        streak = user.current_streak
+    await callback.message.answer(
+        "Bosh menyu",
+        reply_markup=main_menu_kb(
+            is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
+        ),
+    )
     await callback.answer()
 
 
@@ -500,31 +579,41 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
         user = await get_or_create_user(session, message.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
         if not user_settings.pronunciation_enabled:
-            await message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+            await _edit_session_message(message, state, "🫤 Talaffuz sozlamalarda o‘chirilgan.")
             await state.clear()
             return
         if current == PronunciationStates.waiting_voice_single.state and user_settings.pronunciation_mode == "quiz":
-            await message.answer("ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan.")
+            await _edit_session_message(
+                message, state, "ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan."
+            )
             await state.clear()
             return
         if current == PronunciationStates.quiz_active.state and user_settings.pronunciation_mode == "single":
-            await message.answer("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
+            await _edit_session_message(
+                message, state, "ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan."
+            )
             await state.clear()
             return
         if user_settings.daily_limit_enabled and user_settings.daily_pronunciation_limit > 0:
             used = await get_today_pronunciation_count(session, user.id)
             if used >= user_settings.daily_pronunciation_limit:
-                await message.answer("⚠️ Bugungi talaffuz limitiga yetdingiz 🙂")
+                await _edit_session_message(
+                    message, state, "⚠️ Bugungi talaffuz limitiga yetdingiz 🙂"
+                )
                 return
 
     data = await state.get_data()
     if data.get("stt_processing"):
-        await message.answer("⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂")
+        await _edit_session_message(
+            message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
+        )
         return
 
     lock = _LOCKS.setdefault(message.from_user.id, asyncio.Lock())
     if lock.locked():
-        await message.answer("⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂")
+        await _edit_session_message(
+            message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
+        )
         return
 
     await state.update_data(stt_processing=True)

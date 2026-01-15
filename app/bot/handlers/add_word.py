@@ -1,3 +1,7 @@
+import json
+import random
+from pathlib import Path
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -5,11 +9,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from sqlalchemy.exc import IntegrityError
 
 from app.bot.keyboards.main import main_menu_kb
+from app.config import settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.repo.words import create_word_with_review, get_word_by_user_word
 from app.db.session import AsyncSessionLocal
 from app.db.repo.translation_cache import get_cached_translation, save_translation
 from app.db.repo.user_settings import get_or_create_user_settings
+from app.services.feature_flags import is_feature_enabled
 from app.services.translation import translate
 from app.utils.bad_words import contains_bad_words
 
@@ -79,9 +85,14 @@ async def _finalize_word(message: Message, user_id: int, state: FSMContext) -> N
             await state.clear()
             return
 
+    async with AsyncSessionLocal() as session:
+        user = await get_user_by_telegram_id(session, user_id)
+        streak = user.current_streak if user else 0
     await message.answer(
         "✅ Zo‘r! So‘z bazaga qo‘shildi. Endi uni mashqda ko‘ramiz 💪",
-        reply_markup=main_menu_kb(),
+        reply_markup=main_menu_kb(
+            is_admin=message.from_user.id in settings.admin_user_ids, streak=streak
+        ),
     )
     await state.clear()
 
@@ -96,7 +107,33 @@ async def start_add_word(callback: CallbackQuery, state: FSMContext) -> None:
 async def start_add_word_message(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(AddWordStates.word)
-    await message.answer("✍️ Yangi so‘zni yozing (masalan: abandon)")
+    examples = _WORD_EXAMPLES or [
+        "abandon",
+        "curious",
+        "improve",
+        "journey",
+        "reflect",
+    ]
+    await message.answer(
+        f"✍️ Yangi so‘zni yozing (masalan: {random.choice(examples)})"
+    )
+
+
+_WORD_EXAMPLES = []
+_EXAMPLES_PATH = Path(__file__).resolve().parents[2] / "data" / "word_examples.json"
+
+
+def _load_examples() -> list[str]:
+    try:
+        data = json.loads(_EXAMPLES_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, str) and item.strip()]
+
+
+_WORD_EXAMPLES = _load_examples()
 
 
 @router.message(AddWordStates.word)
@@ -129,12 +166,24 @@ async def add_word_word(message: Message, state: FSMContext) -> None:
                 text += f"Misol: {existing.example}\n"
             if existing.pos:
                 text += f"So‘z turkumi: {existing.pos}\n"
-            await message.answer(text, reply_markup=main_menu_kb())
+            await message.answer(
+                text,
+                reply_markup=main_menu_kb(
+                    is_admin=message.from_user.id in settings.admin_user_ids,
+                    streak=user.current_streak,
+                ),
+            )
             await state.clear()
             return
 
     await state.update_data(word=word)
-    if not user_settings.translation_enabled or not user_settings.auto_translation_suggest:
+    async with AsyncSessionLocal() as session:
+        translation_enabled = await is_feature_enabled(session, "translation")
+    if (
+        not translation_enabled
+        or not user_settings.translation_enabled
+        or not user_settings.auto_translation_suggest
+    ):
         await state.update_data(suggested_translation=None)
         await state.set_state(AddWordStates.translation_suggest)
         await message.answer(

@@ -23,13 +23,13 @@ async def create_session(session: AsyncSession, user_id: int) -> bool:
     return result.rowcount == 1
 
 
-async def update_session_review(
-    session: AsyncSession, user_id: int, review_id: int | None
+async def update_session_word(
+    session: AsyncSession, user_id: int, word_id: int | None
 ) -> None:
     db_session = await get_session(session, user_id)
     if not db_session:
         return
-    db_session.current_review_id = review_id
+    db_session.current_word_id = word_id
     await session.commit()
 
 

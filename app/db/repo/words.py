@@ -1,17 +1,21 @@
 from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Review, ReviewLog, Word
+from app.db.models import Review, ReviewLog, TrainingSession, Word
 from app.services.srs import initial_ease_factor, initial_interval_days
 
 
 async def get_word_by_user_word(
     session: AsyncSession, user_id: int, word: str
 ) -> Word | None:
+    word_norm = word.strip().lower()
     result = await session.execute(
-        select(Word).where(Word.user_id == user_id, Word.word == word)
+        select(Word).where(
+            Word.user_id == user_id,
+            func.lower(Word.word) == word_norm,
+        )
     )
     return result.scalar_one_or_none()
 
@@ -24,26 +28,20 @@ async def create_word_with_review(
     example: str | None,
     pos: str | None,
 ) -> Word:
+    word_norm = word.strip().lower()
+    translation_norm = translation.strip().lower()
     new_word = Word(
         user_id=user_id,
-        word=word,
-        translation=translation,
+        word=word_norm,
+        translation=translation_norm,
         example=example,
         pos=pos,
+        srs_repetitions=0,
+        srs_interval_days=initial_interval_days(),
+        srs_ease_factor=initial_ease_factor(),
+        srs_due_at=datetime.utcnow(),
     )
     session.add(new_word)
-    await session.flush()
-
-    review = Review(
-        user_id=user_id,
-        word_id=new_word.id,
-        stage=0,
-        ease_factor=initial_ease_factor(),
-        interval_days=initial_interval_days(),
-        due_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    session.add(review)
     await session.commit()
     await session.refresh(new_word)
     return new_word
@@ -94,7 +92,7 @@ async def update_word_text(
     word = await get_word(session, user_id, word_id)
     if not word:
         return
-    word.word = new_word
+    word.word = new_word.strip().lower()
     await session.commit()
 
 
@@ -104,7 +102,7 @@ async def update_translation(
     word = await get_word(session, user_id, word_id)
     if not word:
         return
-    word.translation = new_translation
+    word.translation = new_translation.strip().lower()
     await session.commit()
 
 
@@ -123,6 +121,11 @@ async def delete_word(session: AsyncSession, user_id: int, word_id: int) -> None
     if not word:
         return
     await session.execute(
+        update(TrainingSession)
+        .where(TrainingSession.user_id == user_id, TrainingSession.current_word_id == word_id)
+        .values(current_word_id=None)
+    )
+    await session.execute(
         delete(ReviewLog).where(ReviewLog.word_id == word_id, ReviewLog.user_id == user_id)
     )
     await session.execute(
@@ -135,8 +138,10 @@ async def delete_word(session: AsyncSession, user_id: int, word_id: int) -> None
 async def exists_word(
     session: AsyncSession, user_id: int, word_text: str, exclude_word_id: int | None = None
 ) -> bool:
+    word_norm = word_text.strip().lower()
     stmt = select(func.count(Word.id)).where(
-        Word.user_id == user_id, Word.word == word_text
+        Word.user_id == user_id,
+        func.lower(Word.word) == word_norm,
     )
     if exclude_word_id is not None:
         stmt = stmt.where(Word.id != exclude_word_id)

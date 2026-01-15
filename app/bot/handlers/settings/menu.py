@@ -3,10 +3,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb
+from app.config import settings
 from app.bot.keyboards.settings import settings_main_kb
 from app.bot.handlers.settings.states import SettingsStates
 from app.db.repo.user_settings import get_or_create_user_settings
-from app.db.repo.users import get_user_by_telegram_id
+from app.db.repo.users import get_or_create_user, get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 
 router = Router()
@@ -65,5 +66,13 @@ async def settings_menu(callback: CallbackQuery, state: FSMContext) -> None:
 async def settings_back(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("⬅️ Bosh menyu")
-    await callback.message.answer("Bosh menyu", reply_markup=main_menu_kb())
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id)
+        streak = user.current_streak
+    await callback.message.answer(
+        "Bosh menyu",
+        reply_markup=main_menu_kb(
+            is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
+        ),
+    )
     await callback.answer()

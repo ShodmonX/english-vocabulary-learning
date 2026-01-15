@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb
+from app.config import settings
 from app.bot.keyboards.manage_words import (
     delete_confirm_kb,
     edit_menu_kb,
@@ -537,7 +538,15 @@ async def manage_edit_example(message: Message, state: FSMContext) -> None:
             return
         await update_example(session, user.id, word_id, new_example)
 
-    await message.answer("✅ Yangilandi", reply_markup=main_menu_kb())
+    async with AsyncSessionLocal() as session:
+        user = await get_user_by_telegram_id(session, message.from_user.id)
+        streak = user.current_streak if user else 0
+    await message.answer(
+        "✅ Yangilandi",
+        reply_markup=main_menu_kb(
+            is_admin=message.from_user.id in settings.admin_user_ids, streak=streak
+        ),
+    )
     await state.clear()
 
 

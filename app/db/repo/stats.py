@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Review, ReviewLog, Word
+from app.db.models import ReviewLog, Word
 
 
 async def get_today_review_stats(session: AsyncSession, user_id: int) -> dict[str, int]:
@@ -85,9 +85,9 @@ async def get_total_words(session: AsyncSession, user_id: int) -> int:
 
 async def get_due_count(session: AsyncSession, user_id: int) -> int:
     result = await session.execute(
-        select(func.count(Review.id)).where(
-            Review.user_id == user_id,
-            Review.due_at <= datetime.utcnow(),
+        select(func.count(Word.id)).where(
+            Word.user_id == user_id,
+            Word.srs_due_at <= datetime.utcnow(),
         )
     )
     return int(result.scalar_one())

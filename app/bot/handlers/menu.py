@@ -6,14 +6,16 @@ from app.bot.handlers.add_word import start_add_word_message
 from app.bot.handlers.quiz import start_quiz_message
 from app.bot.handlers.settings.menu import open_settings_message
 from app.bot.handlers.stats import show_stats_message
-from app.bot.handlers.training import start_training_message
+from app.bot.handlers.practice.menu import practice_entry_text
+from app.bot.handlers.admin.entry import open_admin_panel
+from app.bot.handlers.admin.common import ensure_admin_message
 
 router = Router()
 
 
 @router.message(F.text == "📚 Mashq qilish")
 async def menu_training(message: Message, state: FSMContext) -> None:
-    await start_training_message(message, message.from_user.id, state)
+    await practice_entry_text(message, state)
 
 
 @router.message(F.text == "🧩 Quiz")
@@ -48,3 +50,10 @@ async def menu_pronunciation(message: Message, state: FSMContext) -> None:
     from app.bot.handlers.pronunciation import open_pronunciation_menu
 
     await open_pronunciation_menu(message, state)
+
+
+@router.message(F.text == "🛠 Admin")
+async def menu_admin(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await open_admin_panel(message, state)

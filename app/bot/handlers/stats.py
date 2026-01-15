@@ -3,6 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb
+from app.config import settings
 from app.db.repo.stats import (
     get_due_count,
     get_today_review_stats,
@@ -59,4 +60,10 @@ async def show_stats_message(
         + "\n".join(weekly_lines)
         + "\n\n💡 Davom eting, natija albatta bo‘ladi!"
     )
-    await message.answer(text, reply_markup=main_menu_kb())
+    await message.answer(
+        text,
+        reply_markup=main_menu_kb(
+            is_admin=user_id in settings.admin_user_ids,
+            streak=user.current_streak,
+        ),
+    )
