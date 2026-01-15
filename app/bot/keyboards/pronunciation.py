@@ -6,6 +6,7 @@ def pronunciation_menu_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🎯 Bitta so‘z tekshirish", callback_data="pron:menu:single")],
             [InlineKeyboardButton(text="🧩 Talaffuz quiz", callback_data="pron:menu:quiz")],
+            [InlineKeyboardButton(text="🎯 Tanlab talaffuz quiz", callback_data="pron:menu:select")],
         ]
     )
 
@@ -72,3 +73,59 @@ def quiz_done_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏁 Menyuga qaytish", callback_data="pron:exit")],
         ]
     )
+
+
+def select_menu_kb(selected_count: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🕒 Oxirgilar", callback_data="pron:select:recent")],
+            [InlineKeyboardButton(text="🔎 Qidirish", callback_data="pron:select:search")],
+            [
+                InlineKeyboardButton(
+                    text=f"✅ Tanlanganlar ({selected_count})", callback_data="pron:select:view"
+                )
+            ],
+            [InlineKeyboardButton(text="▶️ Quizni boshlash", callback_data="pron:select:start")],
+            [InlineKeyboardButton(text="◀️ Orqaga", callback_data="pron:menu:back")],
+        ]
+    )
+
+
+def select_results_kb(
+    items: list[tuple[int, str]],
+    selected_ids: set[int],
+    page: int,
+    context: str,
+    has_next: bool,
+    selected_count: int,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for word_id, label in items:
+        prefix = "✅ " if word_id in selected_ids else "➕ "
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{prefix}{label}",
+                    callback_data=f"pron:select:toggle:{word_id}:{context}:{page}",
+                )
+            ]
+        )
+
+    nav_row: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"pron:select:{context}:page:{page-1}")
+        )
+    nav_row.append(
+        InlineKeyboardButton(
+            text=f"✅ Tanlanganlar ({selected_count})", callback_data="pron:select:view"
+        )
+    )
+    if has_next:
+        nav_row.append(
+            InlineKeyboardButton(text="➡️ Keyingi", callback_data=f"pron:select:{context}:page:{page+1}")
+        )
+    rows.append(nav_row)
+    rows.append([InlineKeyboardButton(text="▶️ Quizni boshlash", callback_data="pron:select:start")])
+    rows.append([InlineKeyboardButton(text="◀️ Orqaga", callback_data="pron:select:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
