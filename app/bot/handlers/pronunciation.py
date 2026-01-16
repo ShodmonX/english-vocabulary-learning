@@ -161,7 +161,7 @@ async def _require_user(message: Message) -> int | None:
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, message.from_user.id)
         await get_or_create_user_settings(session, user)
-        return user.id
+        return message.from_user.id
 
 
 async def _render_results(callback: CallbackQuery, state: FSMContext, page: int, context: str) -> None:
