@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.feature_flags import is_feature_enabled
 
 
 class BlockedUserMiddleware(BaseMiddleware):
@@ -21,6 +22,13 @@ class BlockedUserMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         async with AsyncSessionLocal() as session:
+            if await is_feature_enabled(session, "maintenance"):
+                text = "🛠 Hozir texnik ishlar ketmoqda. Keyinroq urinib ko‘ring."
+                if isinstance(event, CallbackQuery):
+                    await event.answer(text, show_alert=True)
+                else:
+                    await event.answer(text)
+                return
             user = await get_user_by_telegram_id(session, user_id)
             if user and user.is_blocked:
                 text = "⛔ Siz bloklangansiz. Admin bilan bog‘laning."

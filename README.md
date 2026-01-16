@@ -131,6 +131,12 @@ GOOGLE_TRANSLATE_TIMEOUT_SECONDS=15
 ## Admin Panel
 - /admin faqat `ADMIN_USER_IDS` ro‘yxatidagi userlar uchun
 - Bo‘limlar: Statistika, Users, SRS, Kontent, Feature flag’lar, Maintenance
+- Database Management: backup/create/list/restore/delete
+
+### Backup storage
+- Backup katalogi: `/app/backups`
+- Format: `app_YYYY-MM-DD_HH-MM.dump`
+- pg_dump -Fc orqali yaratiladi
 - Feature flag’lar global override qiladi (quiz/pronunciation/practice/translation)
 
 ### Admin manual test
@@ -140,6 +146,7 @@ GOOGLE_TRANSLATE_TIMEOUT_SECONDS=15
 4) 🧠 SRS reset (confirm bilan)
 5) ⚙️ Feature flag’lar → quiz/pronunciation/practice/translation toggle
 6) 🧪 Debug → FSM reset / loglar
+7) 🗄 Database Management → Backup now / List / Restore / Delete
 
 ## Help manual test
 1) /help → bo‘limlar chiqishi

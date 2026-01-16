@@ -5,6 +5,8 @@ services:
       POSTGRES_USER: vocab
       POSTGRES_PASSWORD: vocab
       POSTGRES_DB: vocab
+      TZ: Asia/Tashkent
+      PGTZ: Asia/Tashkent
     ports:
       - "5433:5432"
     healthcheck:
@@ -13,23 +15,23 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
 
-  # bot:
-  #   build: .
-  #   env_file:
-  #     - .env
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   restart: unless-stopped
-
-  bot-dev:
+  bot:
     build: .
     env_file:
       - .env
+    environment:
+      TZ: Asia/Tashkent
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - .:/app
+      - ./backups:/app/backups
     restart: unless-stopped
+
+volumes:
+  pgdata:

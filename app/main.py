@@ -25,6 +25,7 @@ from app.config import settings as app_settings
 from app.db.session import AsyncSessionLocal
 from app.services.log_buffer import ErrorBufferHandler
 from app.services.reminders import ReminderService
+from app.services.db_backup.scheduler import setup_backup_scheduler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logging.basicConfig(level=app_settings.log_level)
@@ -67,6 +68,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.users_router)
     dp.include_router(admin.srs_router)
     dp.include_router(admin.content_router)
+    dp.include_router(admin.db_management_router)
     dp.include_router(admin.features_router)
     dp.include_router(admin.maintenance_router)
     dp.include_router(help.router)
@@ -90,6 +92,7 @@ def setup_dispatcher() -> Dispatcher:
 
 async def on_startup() -> None:
     await setup_bot_commands(bot)
+    setup_backup_scheduler(scheduler)
     scheduler.start()
     async with AsyncSessionLocal() as session:
         await reminder_service.load_users(session)

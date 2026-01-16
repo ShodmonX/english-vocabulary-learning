@@ -6,6 +6,7 @@ FEATURE_DEFAULTS: dict[str, bool] = {
     "pronunciation": True,
     "practice": True,
     "translation": True,
+    "maintenance": False,
 }
 
 
