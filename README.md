@@ -26,6 +26,8 @@ STT_OVERLOAD_MODE=queue
 STT_QUEUE_MAX_WAIT_SECONDS=10
 BASIC_MONTHLY_SECONDS=500
 TIMEZONE=Asia/Tashkent
+ADMIN_CONTACT_USERNAME=@your_admin
+TELEGRAM_STARS_PROVIDER_TOKEN=
 ```
 
 ## Default sozlamalar
@@ -133,6 +135,19 @@ TIMEZONE=Asia/Tashkent
 - `/addcredit <telegram_id> <seconds>`
 - Admin panel: "💳 Kreditlar" → "➕ ID orqali kredit"
 - Forward orqali: admin user xabarini forward qiladi → bot sekund so‘raydi
+
+### Paket narxlarini boshqarish
+- Admin panel: "📦 Paketlar narxi" → paket tanlang → UZS/Stars narxini o‘zgartiring yoki OFF qiling.
+
+## Top-up (Profile)
+- Profil → "➕ Admin orqali to‘ldirish": admin username ko‘rsatiladi, paket nomi yuboriladi.
+- Profil → "⭐ Telegram Stars orqali": Stars to‘lovidan so‘ng kredit avtomatik qo‘shiladi.
+
+### Telegram Stars env
+```
+ADMIN_CONTACT_USERNAME=@your_admin
+TELEGRAM_STARS_PROVIDER_TOKEN=
+```
 
 ### Manual test
 1) "🗣 Talaffuz" → "🎯 Bitta so‘z tekshirish"

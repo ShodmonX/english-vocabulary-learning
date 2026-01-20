@@ -22,8 +22,10 @@ from app.bot.handlers import (
     profile,
 )
 from app.bot.middlewares.blocked import BlockedUserMiddleware
+from app.bot.middlewares.ignore_not_modified import IgnoreNotModifiedMiddleware
 from app.config import settings as app_settings
 from app.db.session import AsyncSessionLocal
+from app.db.repo.stars_payments import reprocess_paid
 from app.services.log_buffer import ErrorBufferHandler
 from app.services.reminders import ReminderService
 from app.services.db_backup.scheduler import setup_backup_scheduler
@@ -65,6 +67,7 @@ async def setup_bot_commands(bot: Bot) -> None:
 def setup_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
     dp.update.middleware(BlockedUserMiddleware())
+    dp.update.middleware(IgnoreNotModifiedMiddleware())
     dp.include_router(admin.entry_router)
     dp.include_router(admin.menu_router)
     dp.include_router(admin.stats_router)
@@ -75,6 +78,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.features_router)
     dp.include_router(admin.maintenance_router)
     dp.include_router(admin.credits_router)
+    dp.include_router(admin.packages_router)
     dp.include_router(help.router)
     dp.include_router(leaderboard.entry_router)
     dp.include_router(leaderboard.menu_router)
@@ -101,6 +105,7 @@ async def on_startup() -> None:
     scheduler.start()
     async with AsyncSessionLocal() as session:
         await reminder_service.load_users(session)
+        await reprocess_paid(session)
 
 
 async def main() -> None:

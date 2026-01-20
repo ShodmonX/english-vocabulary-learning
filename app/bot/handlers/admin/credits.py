@@ -166,6 +166,7 @@ async def admin_addcredit_command(message: Message, state: FSMContext) -> None:
         return
     telegram_id = parse_int(parts[1])
     seconds = parse_int(parts[2])
+    reason = " ".join(parts[3:]).strip() if len(parts) > 3 else None
     if not telegram_id or not seconds or seconds <= 0:
         await message.answer("❗ ID va sekund to‘g‘ri bo‘lishi kerak.")
         return
@@ -178,7 +179,7 @@ async def admin_addcredit_command(message: Message, state: FSMContext) -> None:
             await message.answer("🫤 User topilmadi.")
             return
         try:
-            await add_topup(session, user.id, seconds, message.from_user.id, reason="admin_command")
+            await add_topup(session, user.id, seconds, message.from_user.id, reason=reason or "admin_command")
             await log_admin_action(
                 session, message.from_user.id, "credits_add", "user", str(user.id)
             )

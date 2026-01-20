@@ -206,7 +206,17 @@ async def refund_charge(
 
 
 async def add_topup(
-    session: AsyncSession, user_id: int, seconds: int, admin_id: int, reason: str | None = None
+    session: AsyncSession,
+    user_id: int,
+    seconds: int,
+    admin_id: int,
+    reason: str | None = None,
+    *,
+    provider: str = "admin",
+    package_id: str | None = None,
+    provider_payment_id: str | None = None,
+    amount_stars: int | None = None,
+    meta: dict | None = None,
 ) -> None:
     if seconds <= 0:
         raise CreditError("Topup seconds must be positive")
@@ -223,6 +233,11 @@ async def add_topup(
             topup_delta_seconds=seconds,
             admin_id=admin_id,
             reason=reason,
+            provider=provider,
+            package_id=package_id,
+            provider_payment_id=provider_payment_id,
+            amount_stars=amount_stars,
+            meta=meta,
         )
     )
     await session.commit()

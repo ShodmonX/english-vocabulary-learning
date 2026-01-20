@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     stt_queue_max_wait_seconds: int = 10
     basic_monthly_seconds: int = 500
     timezone: str = "Asia/Tashkent"
+    admin_contact_username: str | None = None
+    telegram_stars_provider_token: str | None = None
     translation_enabled: bool = True
     google_translate_api_key: str | None = None
     google_translate_url: str = "https://translation.googleapis.com/language/translate/v2"

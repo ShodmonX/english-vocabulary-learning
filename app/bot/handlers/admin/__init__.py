@@ -8,6 +8,7 @@ from app.bot.handlers.admin.db_management import router as db_management_router
 from app.bot.handlers.admin.features import router as features_router
 from app.bot.handlers.admin.maintenance import router as maintenance_router
 from app.bot.handlers.admin.credits import router as credits_router
+from app.bot.handlers.admin.packages import router as packages_router
 
 __all__ = [
     "entry_router",
@@ -20,4 +21,5 @@ __all__ = [
     "features_router",
     "maintenance_router",
     "credits_router",
+    "packages_router",
 ]

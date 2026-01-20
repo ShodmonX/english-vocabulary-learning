@@ -17,6 +17,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -189,14 +190,67 @@ class CreditLedger(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     basic_delta_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     topup_delta_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     charge_seconds: Mapped[int | None] = mapped_column(Integer)
     audio_duration_seconds: Mapped[int | None] = mapped_column(Integer)
     provider: Mapped[str | None] = mapped_column(String(32))
     provider_request_id: Mapped[str | None] = mapped_column(String(128))
+    package_id: Mapped[str | None] = mapped_column(String(32))
+    provider_payment_id: Mapped[str | None] = mapped_column(String(128))
     admin_id: Mapped[int | None] = mapped_column(BigInteger)
+    amount_stars: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)
+    meta: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class StarsPayment(Base):
+    __tablename__ = "stars_payments"
+    __table_args__ = (UniqueConstraint("payload", name="uq_stars_payments_payload"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount_stars: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+    credited_at: Mapped[datetime | None] = mapped_column(DateTime)
+    telegram_charge_id: Mapped[str | None] = mapped_column(String(128))
+    raw_update: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class Package(Base):
+    __tablename__ = "packages"
+    __table_args__ = (UniqueConstraint("package_key", name="uq_packages_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    package_key: Mapped[str] = mapped_column(String(16), nullable=False)
+    seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    approx_attempts_5s: Mapped[int] = mapped_column(Integer, nullable=False)
+    manual_price_uzs: Mapped[int] = mapped_column(Integer, nullable=False)
+    stars_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_admin_id: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class PackageChangeLog(Base):
+    __tablename__ = "package_change_log"
+    __table_args__ = (Index("ix_package_change_created", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    package_key: Mapped[str] = mapped_column(String(16), nullable=False)
+    old_manual_price_uzs: Mapped[int | None] = mapped_column(Integer)
+    new_manual_price_uzs: Mapped[int | None] = mapped_column(Integer)
+    old_stars_price: Mapped[int | None] = mapped_column(Integer)
+    new_stars_price: Mapped[int | None] = mapped_column(Integer)
+    old_is_active: Mapped[bool | None] = mapped_column(Boolean)
+    new_is_active: Mapped[bool | None] = mapped_column(Boolean)
     reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
