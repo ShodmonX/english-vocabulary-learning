@@ -80,6 +80,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.maintenance_router)
     dp.include_router(admin.credits_router)
     dp.include_router(admin.packages_router)
+    dp.include_router(admin.contact_router)
     dp.include_router(help.router)
     dp.include_router(leaderboard.entry_router)
     dp.include_router(leaderboard.menu_router)

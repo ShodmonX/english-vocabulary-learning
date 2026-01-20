@@ -25,7 +25,7 @@ profile:
   topup_admin:
     header: "💳 Admin orqali to‘ldirish paketlari:"
     item: |
-      • {key}: {seconds}s ({attempts} ta ~5s urinish)
+      • {package_key}: {seconds}s ({attempts} ta ~5s urinish)
         Narx: {price} UZS
     contact: "📩 Admin bilan bog‘laning:"
     footer: "Paket nomini yozib yuboring: BASIC / STANDARD / PRO"
@@ -33,12 +33,12 @@ profile:
   topup_stars:
     header: "⭐ Telegram Stars orqali to‘ldirish:"
     item: |
-      • {key}: {seconds}s ({attempts} ta ~5s urinish)
+      • {package_key}: {seconds}s ({attempts} ta ~5s urinish)
         Narx: {price} ⭐
     footer: "Stars orqali to‘lov avtomatik — kredit darhol qo‘shiladi."
   package_inactive: "Paket mavjud emas yoki o‘chirilgan."
-  invoice_label: "{key} paket"
-  invoice_title: "{key} paket"
+  invoice_label: "{package_key} paket"
+  invoice_title: "{package_key} paket"
   invoice_description: "{seconds}s top-up krediti"
 
 payments:
@@ -249,7 +249,7 @@ help_content:
     - 🧪 Debug / Maintenance
 
 help:
-  menu: "❓ Yordam bo‘limi\nKerakli bo‘limni tanlang:"
+  menu: "❓ Yordam bo‘limi\nKerakli bo‘limni tanlang:\n\nBatafsil ma'lumot uchun: https://telegra.ph/English-Vocabulary-Learning-01-20"
   closed: "✅ Yordam yopildi."
   main_menu: "Bosh menyu"
   section_not_found: "⚠️ Bo‘lim topilmadi."
@@ -346,6 +346,16 @@ admin_packages:
   invalid_number: "❗ Raqam kiriting."
   error: "Xatolik."
   saved: "✅ Saqlandi"
+
+admin_contact:
+  not_set: "o‘rnatilmagan"
+  prompt: |
+    👤 Admin username: {username}
+    Yangi admin username yuboring (masalan: @admin).
+    O‘chirish uchun '-' yuboring.
+  invalid: "❗ Username noto‘g‘ri."
+  saved: "✅ Saqlandi: {username}"
+  cleared: "✅ Admin username o‘chirildi."
 
 admin_users:
   menu: "👥 Foydalanuvchilar bo‘limi:"

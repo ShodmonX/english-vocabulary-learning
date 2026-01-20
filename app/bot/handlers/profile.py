@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.db.models import StarsPayment
 from app.db.repo.credits import get_profile_summary
+from app.db.repo.app_settings import get_admin_contact_username
 from app.db.repo.packages import get_active_package, list_packages
 from app.db.repo.stars_payments import create_pending_payment, credit_paid_payment, mark_failed
 from app.db.repo.users import get_or_create_user
@@ -42,7 +43,7 @@ def _profile_text(user, summary: dict[str, object]) -> str:
     )
 
 
-def _packages_admin_text(packages) -> str:
+def _packages_admin_text(packages, admin_contact: str | None) -> str:
     lines = [t("profile.topup_admin.header")]
     for pkg in packages:
         lines.append(
@@ -54,7 +55,7 @@ def _packages_admin_text(packages) -> str:
                 price=pkg.manual_price_uzs,
             )
         )
-    admin_tag = settings.admin_contact_username or t("profile.topup_admin.default_admin")
+    admin_tag = admin_contact or settings.admin_contact_username or t("profile.topup_admin.default_admin")
     lines.append(t("profile.topup_admin.contact"))
     lines.append(admin_tag)
     lines.append(t("profile.topup_admin.footer"))
@@ -113,8 +114,9 @@ async def profile_refresh(callback: CallbackQuery) -> None:
 async def profile_topup_admin(callback: CallbackQuery) -> None:
     async with AsyncSessionLocal() as session:
         packages = [pkg for pkg in await list_packages(session) if pkg.is_active]
+        admin_contact = await get_admin_contact_username(session)
     await callback.message.edit_text(
-        _packages_admin_text(packages), reply_markup=profile_back_kb()
+        _packages_admin_text(packages, admin_contact), reply_markup=profile_back_kb()
     )
     await callback.answer()
 

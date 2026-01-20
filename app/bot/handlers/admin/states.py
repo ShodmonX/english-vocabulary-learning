@@ -16,3 +16,4 @@ class AdminStates(StatesGroup):
     package_seconds = State()
     package_manual_price = State()
     package_stars_price = State()
+    admin_contact_username = State()

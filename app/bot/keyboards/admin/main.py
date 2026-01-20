@@ -12,6 +12,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=b("admin.content"), callback_data="admin:content")],
             [InlineKeyboardButton(text=b("admin.packages"), callback_data="admin:packages")],
             [InlineKeyboardButton(text=b("admin.credits"), callback_data="admin:credits")],
+            [InlineKeyboardButton(text=b("admin.contact"), callback_data="admin:contact")],
             [InlineKeyboardButton(text=b("admin.db_management"), callback_data="admin:db:menu")],
             [InlineKeyboardButton(text=b("admin.features"), callback_data="admin:features")],
             [InlineKeyboardButton(text=b("admin.maintenance"), callback_data="admin:maintenance")],

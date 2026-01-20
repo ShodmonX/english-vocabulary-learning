@@ -32,7 +32,7 @@ profile:
   topup_admin: "➕ Admin orqali to‘ldirish"
   topup_stars: "⭐ Telegram Stars orqali"
   back: "⬅️ Profilga qaytish"
-  stars_package: "⭐ {key}"
+  stars_package: "⭐ {package_key}"
 
 admin:
   stats: "📊 Umumiy statistika"
@@ -41,6 +41,7 @@ admin:
   content: "📘 Kontent nazorati"
   packages: "📦 Paketlar narxi"
   credits: "💳 Kreditlar"
+  contact: "👤 Admin username"
   db_management: "🗄 DB boshqaruvi"
   features: "⚙️ Funksiyalar"
   maintenance: "🧪 Texnik/Debug"

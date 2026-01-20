@@ -287,6 +287,14 @@ class FeatureFlag(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
     __table_args__ = (Index("ix_admin_audit_created_at", "created_at"),)
