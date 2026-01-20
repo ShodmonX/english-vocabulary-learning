@@ -173,6 +173,34 @@ class PronunciationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class CreditBalance(Base):
+    __tablename__ = "credit_balances"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    basic_remaining_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    topup_remaining_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_basic_refill_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class CreditLedger(Base):
+    __tablename__ = "credit_ledger"
+    __table_args__ = (Index("ix_credit_ledger_user_created", "user_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    basic_delta_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    topup_delta_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    charge_seconds: Mapped[int | None] = mapped_column(Integer)
+    audio_duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    provider: Mapped[str | None] = mapped_column(String(32))
+    provider_request_id: Mapped[str | None] = mapped_column(String(128))
+    admin_id: Mapped[int | None] = mapped_column(BigInteger)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class TranslationCache(Base):
     __tablename__ = "translation_cache"
     __table_args__ = (

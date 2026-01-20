@@ -17,6 +17,9 @@ def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyb
         ],
         [
             KeyboardButton(text="🏆 Leaderboards"),
+            KeyboardButton(text="👤 Profil"),
+        ],
+        [
             KeyboardButton(text="⚙️ Sozlamalar"),
         ],
     ]

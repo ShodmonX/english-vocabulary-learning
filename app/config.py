@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     log_level: str
     pronunciation_enabled: bool = False
     assemblyai_api_key: str
+    stt_max_concurrency: int = 5
+    stt_overload_mode: str = "queue"
+    stt_queue_max_wait_seconds: int = 10
+    basic_monthly_seconds: int = 500
+    timezone: str = "Asia/Tashkent"
     translation_enabled: bool = True
     google_translate_api_key: str | None = None
     google_translate_url: str = "https://translation.googleapis.com/language/translate/v2"
@@ -73,6 +78,15 @@ class Settings(BaseSettings):
         if not 0 <= value <= 59:
             raise ValueError("AUTO_BACKUP_MINUTE noto‘g‘ri qiymat")
         return value
+
+    @field_validator("stt_overload_mode")
+    @classmethod
+    def validate_stt_overload_mode(cls, value: str) -> str:
+        normalized = value.lower()
+        allowed = {"queue", "failfast"}
+        if normalized not in allowed:
+            raise ValueError("STT_OVERLOAD_MODE noto‘g‘ri qiymat")
+        return normalized
 
 
 settings = Settings()

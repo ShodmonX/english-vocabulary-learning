@@ -21,6 +21,11 @@ BOT_TOKEN=your_bot_token
 DATABASE_URL=postgresql+asyncpg://vocab:vocab@db:5432/vocab
 LOG_LEVEL=INFO
 ASSEMBLYAI_API_KEY=your_assemblyai_api_key
+STT_MAX_CONCURRENCY=5
+STT_OVERLOAD_MODE=queue
+STT_QUEUE_MAX_WAIT_SECONDS=10
+BASIC_MONTHLY_SECONDS=500
+TIMEZONE=Asia/Tashkent
 ```
 
 ## Default sozlamalar
@@ -97,11 +102,37 @@ ASSEMBLYAI_API_KEY=your_assemblyai_api_key
 ```
 PRONUNCIATION_ENABLED=true
 ASSEMBLYAI_API_KEY=your_assemblyai_api_key
+STT_MAX_CONCURRENCY=5
+STT_OVERLOAD_MODE=queue
+STT_QUEUE_MAX_WAIT_SECONDS=10
 ```
 
 ### Quota/rate limit behavior
 - AssemblyAI limitlari tugasa, foydalanuvchiga quyidagi xabar qaytariladi:
   "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
+
+### Concurrency limit
+- AssemblyAI planida bir vaqtning o‘zida maksimum 5 ta transcription ruxsat etiladi.
+- `STT_MAX_CONCURRENCY` bilan umumiy limitni sozlash mumkin.
+- `STT_OVERLOAD_MODE=queue` bo‘lsa, 10 soniyagacha navbatda kutadi (`STT_QUEUE_MAX_WAIT_SECONDS`).
+- `STT_OVERLOAD_MODE=failfast` bo‘lsa, bo‘sh slot bo‘lmasa darhol fallback xabar qaytadi.
+
+## STT Credits
+- Har userda ikki balans: BASIC (oylik yangilanadi) va TOPUP (admin qo‘shadi).
+- Har bir STT so‘rovda audio davomiyligi sekund bo‘yicha yechiladi (ceil).
+- BASIC kredit oy boshida yangilanadi, avvalgisi ustiga qo‘shilmaydi.
+- Kreditsiz bo‘lsa: "Kredit tugadi..." xabari qaytadi.
+
+### Credits sozlash
+```
+BASIC_MONTHLY_SECONDS=500
+TIMEZONE=Asia/Tashkent
+```
+
+### Admin kredit qo‘shish
+- `/addcredit <telegram_id> <seconds>`
+- Admin panel: "💳 Kreditlar" → "➕ ID orqali kredit"
+- Forward orqali: admin user xabarini forward qiladi → bot sekund so‘raydi
 
 ### Manual test
 1) "🗣 Talaffuz" → "🎯 Bitta so‘z tekshirish"

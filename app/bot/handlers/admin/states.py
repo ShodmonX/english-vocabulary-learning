@@ -8,3 +8,6 @@ class AdminStates(StatesGroup):
     content_user = State()
     content_page = State()
     content_edit = State()
+    credits_add_id = State()
+    credits_add_seconds = State()
+    credits_forward_seconds = State()

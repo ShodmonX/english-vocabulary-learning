@@ -39,6 +39,13 @@ from app.services.pronunciation.stt_engine import STTPronunciationEngine
 from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
 from app.services.stt.assemblyai_transcribe import AssemblyAITranscribeSTT
+from app.db.repo.credits import (
+    CreditError,
+    finalize_charge,
+    get_credit_snapshot,
+    refund_charge,
+    reserve_credits,
+)
 from app.db.repo.srs import get_due_words
 from app.utils.audio import convert_to_wav, download_voice
 
@@ -49,6 +56,9 @@ MAX_VOICE_SECONDS = 15
 MAX_VOICE_BYTES = 3 * 1024 * 1024
 _LOCKS: dict[int, asyncio.Lock] = {}
 logger = logging.getLogger("pronunciation")
+STT_UNAVAILABLE_MESSAGE = (
+    "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
+)
 
 
 class PronunciationStates(StatesGroup):
@@ -271,6 +281,8 @@ async def _process_voice(
     ogg_path = None
     wav_path = None
     start = None
+    reservation_id = None
+    db_user_id = None
     try:
         ogg_path, size = await download_voice(message.bot, message.voice)
         if size > MAX_VOICE_BYTES:
@@ -288,6 +300,19 @@ async def _process_voice(
             await _edit_session_message(message, state, text, reply_markup=retry_markup)
             return None
         engine = _engine()
+        audio_duration_seconds = int(message.voice.duration or 0)
+        async with AsyncSessionLocal() as session:
+            user = await get_or_create_user(
+                session, message.from_user.id, message.from_user.username
+            )
+            db_user_id = user.id
+            reservation = await reserve_credits(
+                session,
+                db_user_id,
+                audio_duration_seconds=audio_duration_seconds,
+                provider="assemblyai",
+            )
+            reservation_id = reservation.ledger_id
         start = time.monotonic()
         logger.info("STT_START user=%s", user_id)
         result = await engine.assess(str(wav_path), reference)
@@ -315,13 +340,30 @@ async def _process_voice(
             result.verdict,
             len(transcript),
         )
+        async with AsyncSessionLocal() as session:
+            provider_request_id = None
+            if result.debug and isinstance(result.debug, dict):
+                provider_request_id = result.debug.get("provider_request_id")
+            if reservation_id:
+                await finalize_charge(session, reservation_id, provider_request_id=provider_request_id)
         return result.verdict, transcript, None
+    except CreditError as exc:
+        logger.warning("STT_CREDIT_ERROR user=%s error=%s", user_id, str(exc))
+        text = exc.user_message or "⚠️ Kredit tekshirishda xatolik yuz berdi."
+        if retry_prompt and text != STT_UNAVAILABLE_MESSAGE:
+            text = f"{text}\n\n{retry_prompt}"
+        await _edit_session_message(message, state, text, reply_markup=retry_markup)
+        return None
     except STTProviderError as exc:
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
+        logger.warning("STT_PROVIDER_ERROR user=%s error=%s", user_id, str(exc))
+        if reservation_id and exc.user_message == STT_UNAVAILABLE_MESSAGE:
+            async with AsyncSessionLocal() as session:
+                await refund_charge(session, reservation_id, reason="stt_unavailable")
         text = exc.user_message or "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
-        if retry_prompt:
+        if retry_prompt and text != STT_UNAVAILABLE_MESSAGE:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
         return None
@@ -329,6 +371,10 @@ async def _process_voice(
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
+        logger.exception("STT_UNEXPECTED_ERROR user=%s", user_id)
+        if reservation_id:
+            async with AsyncSessionLocal() as session:
+                await refund_charge(session, reservation_id, reason="stt_error")
         text = "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
         if retry_prompt:
             text = f"{text}\n\n{retry_prompt}"
@@ -795,6 +841,11 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
         PronunciationStates.waiting_voice_single.state,
         PronunciationStates.quiz_active.state,
     }:
+        logger.info(
+            "STT_SKIP user=%s state=%s reason=state",
+            message.from_user.id,
+            current,
+        )
         return
 
     async with AsyncSessionLocal() as session:
@@ -817,8 +868,19 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
             await state.clear()
             return
         if user_settings.daily_limit_enabled and user_settings.daily_pronunciation_limit > 0:
+            credit_snapshot = await get_credit_snapshot(session, user.id)
             used = await get_today_pronunciation_count(session, user.id)
-            if used >= user_settings.daily_pronunciation_limit:
+            if (
+                used >= user_settings.daily_pronunciation_limit
+                and credit_snapshot["topup_remaining_seconds"] <= 0
+            ):
+                logger.info(
+                    "STT_LIMIT_BLOCK user=%s used=%s limit=%s topup=%s",
+                    user.id,
+                    used,
+                    user_settings.daily_pronunciation_limit,
+                    credit_snapshot["topup_remaining_seconds"],
+                )
                 await _edit_session_message(
                     message, state, "⚠️ Bugungi talaffuz limitiga yetdingiz 🙂"
                 )
@@ -826,6 +888,7 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     if data.get("stt_processing"):
+        logger.info("STT_SKIP user=%s reason=processing", message.from_user.id)
         await _edit_session_message(
             message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
         )
@@ -833,6 +896,7 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
 
     lock = _LOCKS.setdefault(message.from_user.id, asyncio.Lock())
     if lock.locked():
+        logger.info("STT_SKIP user=%s reason=lock", message.from_user.id)
         await _edit_session_message(
             message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
         )

@@ -19,6 +19,7 @@ from app.bot.handlers import (
     settings,
     start,
     stats,
+    profile,
 )
 from app.bot.middlewares.blocked import BlockedUserMiddleware
 from app.config import settings as app_settings
@@ -45,12 +46,14 @@ async def setup_bot_commands(bot: Bot) -> None:
             BotCommand(command="start", description="Botni ishga tushirish"),
             BotCommand(command="help", description="Yordam bo‘limi"),
             BotCommand(command="leaderboard", description="Reytinglar"),
+            BotCommand(command="profile", description="Profil"),
         ],
         scope=BotCommandScopeDefault(),
     )
     if app_settings.admin_user_ids:
         admin_commands = [
             BotCommand(command="admin", description="Admin panel"),
+            BotCommand(command="addcredit", description="Kredit qo‘shish"),
         ]
         for admin_id in app_settings.admin_user_ids:
             await bot.set_my_commands(
@@ -71,6 +74,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.db_management_router)
     dp.include_router(admin.features_router)
     dp.include_router(admin.maintenance_router)
+    dp.include_router(admin.credits_router)
     dp.include_router(help.router)
     dp.include_router(leaderboard.entry_router)
     dp.include_router(leaderboard.menu_router)
@@ -82,6 +86,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(manage_words.router)
     dp.include_router(pronunciation.router)
     dp.include_router(pronunciation_text.router)
+    dp.include_router(profile.router)
     dp.include_router(add_word.router)
     dp.include_router(quiz.router)
     dp.include_router(practice.router)

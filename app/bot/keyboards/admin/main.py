@@ -8,6 +8,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="admin:users")],
             [InlineKeyboardButton(text="🧠 SRS nazorati", callback_data="admin:srs")],
             [InlineKeyboardButton(text="📘 Kontent nazorati", callback_data="admin:content")],
+            [InlineKeyboardButton(text="💳 Kreditlar", callback_data="admin:credits")],
             [InlineKeyboardButton(text="🗄 Database Management", callback_data="admin:db:menu")],
             [InlineKeyboardButton(text="⚙️ Feature flag’lar", callback_data="admin:features")],
             [InlineKeyboardButton(text="🧪 Debug / Maintenance", callback_data="admin:maintenance")],
