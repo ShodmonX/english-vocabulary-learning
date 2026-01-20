@@ -38,7 +38,7 @@ from app.services.pronunciation.base import PronunciationEngine
 from app.services.pronunciation.stt_engine import STTPronunciationEngine
 from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
-from app.services.stt.local_whisper import LocalWhisperSTT
+from app.services.stt.assemblyai_transcribe import AssemblyAITranscribeSTT
 from app.db.repo.srs import get_due_words
 from app.utils.audio import convert_to_wav, download_voice
 
@@ -67,7 +67,7 @@ class PronunciationStates(StatesGroup):
 
 
 def _engine() -> PronunciationEngine:
-    return STTPronunciationEngine(LocalWhisperSTT())
+    return STTPronunciationEngine(AssemblyAITranscribeSTT())
 
 
 def _single_prompt(word: str) -> str:
@@ -316,11 +316,11 @@ async def _process_voice(
             len(transcript),
         )
         return result.verdict, transcript, None
-    except STTProviderError:
+    except STTProviderError as exc:
         if start is not None:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.info("STT_END user=%s status=%s duration_ms=%s", user_id, "error", duration_ms)
-        text = "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        text = exc.user_message or "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
         if retry_prompt:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)

@@ -20,6 +20,7 @@ Telegram bot ingliz tili so‘zlarini “Spaced Repetition” asosida yodlash uc
 BOT_TOKEN=your_bot_token
 DATABASE_URL=postgresql+asyncpg://vocab:vocab@db:5432/vocab
 LOG_LEVEL=INFO
+ASSEMBLYAI_API_KEY=your_assemblyai_api_key
 ```
 
 ## Default sozlamalar
@@ -86,15 +87,21 @@ LOG_LEVEL=INFO
 ## Pronunciation (MVP)
 - 🎯 Bitta so‘z tekshirish: oxirgilar yoki qidirish orqali so‘z tanlang, voice yuboring
 - 🧩 Talaffuz quiz: 10 savolgacha, ball bilan baholanadi
-- Local STT (faster-whisper) `.env` orqali boshqariladi
+- AssemblyAI STT `.env` orqali boshqariladi
 
-### Whisper config
+### Migration note
+- STT provider OpenAI’dan AssemblyAI’ga o‘zgartirildi.
+- `.env` ga `ASSEMBLYAI_API_KEY` qo‘shing.
+
+### AssemblyAI STT config
 ```
 PRONUNCIATION_ENABLED=true
-WHISPER_MODEL=base
-WHISPER_DEVICE=cpu
-WHISPER_COMPUTE_TYPE=int8
+ASSEMBLYAI_API_KEY=your_assemblyai_api_key
 ```
+
+### Quota/rate limit behavior
+- AssemblyAI limitlari tugasa, foydalanuvchiga quyidagi xabar qaytariladi:
+  "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
 
 ### Manual test
 1) "🗣 Talaffuz" → "🎯 Bitta so‘z tekshirish"

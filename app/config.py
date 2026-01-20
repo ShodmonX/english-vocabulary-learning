@@ -9,9 +9,7 @@ class Settings(BaseSettings):
     database_url: str
     log_level: str
     pronunciation_enabled: bool = False
-    whisper_model: str = "base"
-    whisper_device: str = "cpu"
-    whisper_compute_type: str = "int8"
+    assemblyai_api_key: str
     translation_enabled: bool = True
     google_translate_api_key: str | None = None
     google_translate_url: str = "https://translation.googleapis.com/language/translate/v2"
