@@ -69,8 +69,6 @@ async def reset_user_settings(session: AsyncSession, user: User) -> UserSettings
     settings.translation_enabled = True
     settings.translation_engine = "google"
     settings.auto_translation_suggest = True
-    settings.daily_limit_enabled = True
-    settings.daily_pronunciation_limit = 10
     settings.notifications_enabled = False
     settings.notification_time = _default_notification_time()
     await session.commit()

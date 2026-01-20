@@ -7,7 +7,10 @@ from app.bot.handlers.admin.states import AdminStates
 from app.bot.keyboards.admin.users import admin_user_actions_kb, admin_users_menu_kb
 from app.db.repo.admin import get_user_summary, log_admin_action, set_user_blocked
 from app.db.session import AsyncSessionLocal
+from app.config import settings
 from app.services.i18n import t
+from zoneinfo import ZoneInfo
+from datetime import timezone as dt_timezone
 
 router = Router()
 
@@ -45,18 +48,39 @@ async def admin_users_search(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(admin_target_user_id=summary["id"], admin_target_telegram_id=telegram_id)
     last_activity = (
-        summary["last_activity"].strftime("%Y-%m-%d %H:%M") if summary["last_activity"] else t("common.none")
+        summary["last_activity"].strftime("%Y-%m-%d %H:%M")
+        if summary["last_activity"]
+        else t("common.none")
+    )
+    if summary["next_basic_refill_at"]:
+        tz = ZoneInfo(settings.timezone)
+        next_refill = (
+            summary["next_basic_refill_at"]
+            .replace(tzinfo=dt_timezone.utc)
+            .astimezone(tz)
+            .strftime("%Y-%m-%d %H:%M")
+        )
+    else:
+        next_refill = t("common.none")
+    username = (
+        f"@{summary['username']}" if summary.get("username") else t("common.none")
     )
     text = t(
         "admin_users.summary",
         telegram_id=summary["telegram_id"],
-        username=summary["username"] or t("common.none"),
+        username=username,
         words=summary["words_count"],
         due=summary["due_count"],
         last_activity=last_activity,
         blocked=t("admin_users.blocked_yes") if summary["is_blocked"] else t("admin_users.blocked_no"),
+        basic_remaining=summary["basic_remaining_seconds"],
+        topup_remaining=summary["topup_remaining_seconds"],
+        basic_used=summary["basic_used_seconds"],
+        basic_limit=summary["basic_monthly_seconds"],
+        next_refill=next_refill,
     )
     await message.answer(text, reply_markup=admin_user_actions_kb(summary["is_blocked"]))
+    await state.set_state(AdminStates.menu)
 
 
 @router.callback_query(F.data.in_(["admin:users:block", "admin:users:unblock"]))

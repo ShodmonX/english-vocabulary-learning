@@ -19,9 +19,11 @@ def admin_user_actions_kb(is_blocked: bool) -> InlineKeyboardMarkup:
     block_action = "admin:users:unblock" if is_blocked else "admin:users:block"
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=block_label, callback_data=block_action)],
-            [InlineKeyboardButton(text=b("admin_users.srs_reset"), callback_data="admin:srs:reset")],
-            [InlineKeyboardButton(text=b("admin_users.content"), callback_data="admin:content:user")],
+            [
+                InlineKeyboardButton(text=block_label, callback_data=block_action),
+                InlineKeyboardButton(text=b("admin_users.srs_reset"), callback_data="admin:srs:reset"),
+            ],
+            [InlineKeyboardButton(text=b("admin_users.content"), callback_data="admin:content:open")],
             [InlineKeyboardButton(text=b("common.back"), callback_data="admin:users")],
         ]
     )

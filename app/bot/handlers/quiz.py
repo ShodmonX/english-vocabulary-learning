@@ -5,17 +5,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from aiogram.exceptions import TelegramBadRequest
+from sqlalchemy import select
 
 from app.bot.keyboards.main import main_menu_kb
 from app.config import settings
-from app.bot.keyboards.quiz import quiz_options_kb
-from app.db.repo.srs import apply_review, get_due_words
+from app.bot.keyboards.quiz import quiz_menu_kb, quiz_options_kb
+from app.db.repo.srs import apply_review
 from app.db.repo.admin import finish_quiz_session, log_quiz_session
 from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_or_create_user, get_user_by_telegram_id
 from app.db.models import User, Word
-from app.db.repo.words import get_words_by_user
+from app.db.repo.words import count_words, list_recent_words
 from app.db.session import AsyncSessionLocal
+from app.bot.handlers.word_selection import start_selection
 from app.services.feature_flags import is_feature_enabled
 from app.services.i18n import t
 from app.services.quiz import build_quiz_questions
@@ -112,42 +114,23 @@ async def _send_next_question(
     await _edit_or_send(message, state, text, reply_markup=quiz_options_kb(question["options"]))
 
 
-@router.callback_query(F.data == "menu:quiz")
-async def start_quiz(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await start_quiz_message(callback.message, callback.from_user.id, state)
-    await callback.answer()
-
-
-async def start_quiz_message(
-    message: Message, user_id: int, state: FSMContext
+async def _start_quiz_with_words(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    words: list[Word],
+    quiz_size: int,
 ) -> None:
-    await state.clear()
+    if len(words) < 4:
+        await message.answer(t("quiz.need_words"))
+        await state.clear()
+        return
+    questions = build_quiz_questions(words, words, max_questions=quiz_size)
+    if not questions:
+        await message.answer(t("quiz.need_words"))
+        await state.clear()
+        return
     async with AsyncSessionLocal() as session:
-        if not await is_feature_enabled(session, "quiz"):
-            await message.answer(t("quiz.disabled"))
-            return
-        user = await get_user_by_telegram_id(session, user_id)
-        if not user:
-            await message.answer(t("common.start_required"))
-            return
-        all_words = await get_words_by_user(session, user.id)
-        if len(all_words) < 4:
-            await message.answer(
-                t("quiz.need_words"),
-                reply_markup=main_menu_kb(
-                    is_admin=message.from_user.id in settings.admin_user_ids,
-                    streak=user.current_streak,
-                ),
-            )
-            return
-        user_settings = await get_or_create_user_settings(session, user)
-        due_words = await get_due_words(
-            session, user.id, user_settings.quiz_words_per_session
-        )
-        questions = build_quiz_questions(
-            all_words, due_words, max_questions=user_settings.quiz_words_per_session
-        )
         quiz_session_id = await log_quiz_session(session, user.id)
 
     await state.set_state(QuizStates.in_quiz)
@@ -159,7 +142,87 @@ async def start_quiz_message(
         user_id=user.id,
         quiz_session_id=quiz_session_id,
     )
+    if message.from_user and message.from_user.is_bot:
+        await state.update_data(quiz_message_id=message.message_id)
     await _send_next_question(message, state)
+
+
+async def _load_quiz_context(user_id: int) -> tuple[User | None, int | None, str | None]:
+    async with AsyncSessionLocal() as session:
+        if not await is_feature_enabled(session, "quiz"):
+            return None, None, t("quiz.disabled")
+        user = await get_user_by_telegram_id(session, user_id)
+        if not user:
+            return None, None, t("common.start_required")
+        total_words = await count_words(session, user.id)
+        if total_words < 4:
+            return None, None, t("quiz.need_words")
+        user_settings = await get_or_create_user_settings(session, user)
+        return user, user_settings.quiz_words_per_session, None
+
+
+@router.callback_query(F.data == "menu:quiz")
+async def start_quiz(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await start_quiz_message(callback.message, callback.from_user.id, state)
+    await callback.answer()
+
+
+async def start_quiz_message(
+    message: Message, user_id: int, state: FSMContext
+) -> None:
+    await state.clear()
+    user, _, error = await _load_quiz_context(user_id)
+    if error:
+        await message.answer(error)
+        return
+    await message.answer(t("quiz.menu_prompt"), reply_markup=quiz_menu_kb())
+
+
+@router.callback_query(F.data == "quiz:menu:last")
+async def quiz_last_words(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    user, quiz_size, error = await _load_quiz_context(callback.from_user.id)
+    if error or not user or not quiz_size:
+        await callback.message.edit_text(error or t("quiz.need_words"))
+        await callback.answer()
+        return
+    async with AsyncSessionLocal() as session:
+        words = await list_recent_words(
+            session, user.id, max(quiz_size, 4), 0
+        )
+    await _start_quiz_with_words(callback.message, state, user, words, quiz_size)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "quiz:menu:selected")
+async def quiz_selected_words(callback: CallbackQuery, state: FSMContext) -> None:
+    user, _, error = await _load_quiz_context(callback.from_user.id)
+    if error or not user:
+        await callback.message.edit_text(error or t("quiz.need_words"))
+        await callback.answer()
+        return
+    await state.clear()
+    await start_selection(callback, state, "quiz_selected")
+
+
+async def start_quiz_selected_words(
+    message: Message, state: FSMContext, selected_ids: list[int], user_id: int
+) -> None:
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        user = await get_user_by_telegram_id(session, user_id)
+        if not user:
+            await message.answer(t("common.start_required"))
+            return
+        user_settings = await get_or_create_user_settings(session, user)
+        result = await session.execute(
+            select(Word)
+            .where(Word.user_id == user.id, Word.id.in_(selected_ids))
+            .order_by(Word.created_at.desc())
+        )
+        words = list(result.scalars().all())
+    await _start_quiz_with_words(message, state, user, words, user_settings.quiz_words_per_session)
 
 
 @router.callback_query(F.data.startswith("quiz:answer:"))

@@ -4,20 +4,21 @@ from app.services.i18n import b
 
 
 def help_menu_kb(is_admin: bool) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text=b("help.quick"), callback_data="help:quick:0")],
-        [InlineKeyboardButton(text=b("help.add"), callback_data="help:add:0")],
-        [InlineKeyboardButton(text=b("help.srs"), callback_data="help:srs:0")],
-        [InlineKeyboardButton(text=b("help.quiz"), callback_data="help:quiz:0")],
-        [InlineKeyboardButton(text=b("help.pron"), callback_data="help:pron:0")],
-        [InlineKeyboardButton(text=b("help.words"), callback_data="help:words:0")],
-        [InlineKeyboardButton(text=b("help.settings"), callback_data="help:settings:0")],
-        [InlineKeyboardButton(text=b("help.trouble"), callback_data="help:trouble:0")],
-        [InlineKeyboardButton(text=b("help.privacy"), callback_data="help:privacy:0")],
+    buttons = [
+        InlineKeyboardButton(text=b("help.quick"), callback_data="help:quick:0"),
+        InlineKeyboardButton(text=b("help.add"), callback_data="help:add:0"),
+        InlineKeyboardButton(text=b("help.srs"), callback_data="help:srs:0"),
+        InlineKeyboardButton(text=b("help.quiz"), callback_data="help:quiz:0"),
+        InlineKeyboardButton(text=b("help.pron"), callback_data="help:pron:0"),
+        InlineKeyboardButton(text=b("help.words"), callback_data="help:words:0"),
+        InlineKeyboardButton(text=b("help.settings"), callback_data="help:settings:0"),
+        InlineKeyboardButton(text=b("help.trouble"), callback_data="help:trouble:0"),
+        InlineKeyboardButton(text=b("help.privacy"), callback_data="help:privacy:0"),
     ]
     if is_admin:
-        rows.append([InlineKeyboardButton(text=b("help.admin"), callback_data="help:admin:0")])
-    rows.append([InlineKeyboardButton(text=b("help.exit"), callback_data="help:exit")])
+        buttons.append(InlineKeyboardButton(text=b("help.admin"), callback_data="help:admin:0"))
+    buttons.append(InlineKeyboardButton(text=b("help.exit"), callback_data="help:exit"))
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -45,6 +45,20 @@ async def admin_content_user_prompt(callback: CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin:content:open")
+async def admin_content_open_from_user(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    data = await state.get_data()
+    user_id = data.get("admin_target_user_id")
+    if not user_id:
+        await callback.answer(t("admin_users.user_not_selected"))
+        return
+    await state.update_data(content_user_id=int(user_id), content_page=0)
+    await _show_content_page(callback.message, state, int(user_id), 0)
+    await callback.answer()
+
+
 @router.message(AdminStates.content_user)
 async def admin_content_user_select(message: Message, state: FSMContext) -> None:
     if not await ensure_admin_message(message):

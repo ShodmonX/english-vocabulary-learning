@@ -34,6 +34,9 @@ profile:
   back: "⬅️ Profilga qaytish"
   stars_package: "⭐ {package_key}"
 
+credits:
+  buy_limit: "💳 Limit sotib olish"
+
 admin:
   stats: "📊 Umumiy statistika"
   users: "👥 Foydalanuvchilar"
@@ -42,10 +45,22 @@ admin:
   packages: "📦 Paketlar narxi"
   credits: "💳 Kreditlar"
   contact: "👤 Admin username"
+  admins: "👥 Adminlar"
+  global_limit: "⚙️ Global limit"
   db_management: "🗄 DB boshqaruvi"
   features: "⚙️ Funksiyalar"
   maintenance: "🧪 Texnik/Debug"
   exit: "🚪 Chiqish"
+
+admin_admins:
+  add: "➕ Admin qo‘shish"
+  list: "🗂 Adminlar ro‘yxati"
+  add_id: "🆔 ID orqali"
+  add_forward: "📩 Forward orqali"
+  remove: "🗑 Adminlikdan olish"
+
+admin_settings:
+  edit: "✏️ O‘zgartirish"
 
 admin_credits:
   add_id: "➕ ID orqali kredit"
@@ -164,6 +179,19 @@ pron:
 
 quiz:
   exit: "🚪 Chiqish"
+  menu_last: "🕒 Oxirgi so‘zlar bo‘yicha"
+  menu_selected: "🎯 Tanlab Quiz"
+
+selection:
+  recent: "🕒 Oxirgilar"
+  search: "🔎 Qidirish"
+  selected: "✅ Tanlanganlar ({count})"
+  clear: "🧹 Tozalash"
+  confirm: "✅ Tasdiqlash"
+  back: "⬅️ Ortga"
+  menu: "🏠 Menyu"
+  selected_prefix: "✅ "
+  add_prefix: "➕ "
 
 practice:
   quick: "⚡ Tezkor mashq"
@@ -198,7 +226,6 @@ settings_menu:
   tests: "🧩 Testlar"
   language: "🌍 Til & Tarjima"
   notifications: "🔔 Bildirishnomalar"
-  limits: "⚡ Cheklovlar"
   advanced: "🛠 Texnik"
 
 settings_learning:
@@ -228,13 +255,6 @@ settings_notifications:
   status_on: "🔔 Eslatmalar: ON"
   status_off: "🔕 Eslatmalar: OFF"
   time: "⏰ Eslatma vaqti"
-  reset: "🔄 Defaultga qaytarish"
-
-settings_limits:
-  status_on: "🔒 Limitlar: ON"
-  status_off: "🔓 Limitlar: OFF"
-  pronunciation: "⚡ Kunlik talaffuz limiti"
-  quiz: "⚡ Quiz limiti (tez kunda)"
   reset: "🔄 Defaultga qaytarish"
 
 settings_advanced:

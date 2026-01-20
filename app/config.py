@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     google_translate_api_key: str | None = None
     google_translate_url: str = "https://translation.googleapis.com/language/translate/v2"
     google_translate_timeout_seconds: int = 15
+    admin_owner_id: int | None = None
     admin_user_ids: set[int] = set()
     backup_dir: str = "/app/backups"
     db_backup_dir: str = "/backups"

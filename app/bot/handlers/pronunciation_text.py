@@ -7,7 +7,7 @@ from app.bot.keyboards.pronunciation import results_kb, single_mode_kb
 from app.db.repo.users import get_or_create_user
 from app.db.repo.words import search_words
 from app.db.session import AsyncSessionLocal
-from app.bot.handlers.pronunciation import PAGE_SIZE, PronunciationStates, _render_select_results
+from app.bot.handlers.pronunciation import PAGE_SIZE, PronunciationStates
 from app.services.i18n import t
 
 router = Router()
@@ -44,13 +44,3 @@ async def pron_search_query(message: Message, state: FSMContext) -> None:
         reply_markup=results_kb(items, 0, "search", has_next),
     )
 
-
-@router.message(PronunciationStates.select_search_query)
-async def pron_select_search_query(message: Message, state: FSMContext) -> None:
-    query = message.text.strip()
-    if not query:
-        await message.answer(t("pronunciation.search_empty"))
-        return
-    await state.update_data(query=query)
-    await state.set_state(PronunciationStates.select_search_results)
-    await _render_select_results(message, state, 0, "search", message.from_user.id)

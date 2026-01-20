@@ -12,6 +12,4 @@ class SettingsStates(StatesGroup):
     language_auto_translation = State()
     notifications = State()
     notifications_time = State()
-    limits = State()
-    limits_pronunciation = State()
     advanced = State()

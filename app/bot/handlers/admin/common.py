@@ -8,6 +8,19 @@ def is_admin(user_id: int) -> bool:
     return user_id in settings.admin_user_ids
 
 
+def get_main_admin_id() -> int | None:
+    if settings.admin_owner_id:
+        return settings.admin_owner_id
+    if settings.admin_user_ids:
+        return sorted(settings.admin_user_ids)[0]
+    return None
+
+
+def is_main_admin(user_id: int) -> bool:
+    main_id = get_main_admin_id()
+    return main_id is not None and user_id == main_id
+
+
 async def ensure_admin_message(message: Message) -> bool:
     if not is_admin(message.from_user.id):
         await message.answer(t("admin.no_permission"))
@@ -17,6 +30,20 @@ async def ensure_admin_message(message: Message) -> bool:
 
 async def ensure_admin_callback(callback: CallbackQuery) -> bool:
     if not is_admin(callback.from_user.id):
+        await callback.answer(t("admin.no_permission"), show_alert=True)
+        return False
+    return True
+
+
+async def ensure_main_admin_message(message: Message) -> bool:
+    if not is_main_admin(message.from_user.id):
+        await message.answer(t("admin.no_permission"))
+        return False
+    return True
+
+
+async def ensure_main_admin_callback(callback: CallbackQuery) -> bool:
+    if not is_main_admin(callback.from_user.id):
         await callback.answer(t("admin.no_permission"), show_alert=True)
         return False
     return True

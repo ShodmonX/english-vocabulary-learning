@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AdminAuditLog, FeatureFlag, PronunciationLog, QuizSession, ReviewLog, User, Word
+from app.db.models import AdminAuditLog, CreditBalance, CreditLedger, FeatureFlag, PronunciationLog, QuizSession, ReviewLog, User, Word
+from app.db.repo.app_settings import get_basic_monthly_seconds
+from app.config import settings
 from app.services.srs import initial_ease_factor, initial_interval_days
 
 
@@ -156,6 +158,25 @@ async def get_user_summary(session: AsyncSession, telegram_id: int) -> dict[str,
         ).scalar_one()
     )
     last_activity = await _get_user_last_activity(session, user.id)
+    balance = await session.get(CreditBalance, user.id)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    used_basic = (
+        await session.execute(
+            select(func.coalesce(func.sum(CreditLedger.basic_delta_seconds), 0)).where(
+                CreditLedger.user_id == user.id,
+                CreditLedger.event_type == "charge",
+                CreditLedger.created_at >= month_start,
+            )
+        )
+    ).scalar_one()
+    used_basic_seconds = int(-(used_basic or 0))
+    basic_limit = await get_basic_monthly_seconds(session)
+    if not basic_limit or basic_limit <= 0:
+        basic_limit = settings.basic_monthly_seconds
+    effective_basic_remaining = 0
+    if balance:
+        allowed_remaining = max(0, basic_limit - used_basic_seconds)
+        effective_basic_remaining = min(balance.basic_remaining_seconds, allowed_remaining)
     return {
         "id": user.id,
         "telegram_id": user.telegram_id,
@@ -164,6 +185,11 @@ async def get_user_summary(session: AsyncSession, telegram_id: int) -> dict[str,
         "words_count": words_count,
         "due_count": due_count,
         "last_activity": last_activity,
+        "basic_remaining_seconds": effective_basic_remaining,
+        "topup_remaining_seconds": balance.topup_remaining_seconds if balance else 0,
+        "next_basic_refill_at": balance.next_basic_refill_at if balance else None,
+        "basic_monthly_seconds": basic_limit,
+        "basic_used_seconds": used_basic_seconds,
     }
 
 

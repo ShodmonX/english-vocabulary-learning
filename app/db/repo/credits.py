@@ -10,13 +10,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import CreditBalance, CreditLedger
+from app.db.repo.app_settings import get_basic_monthly_seconds
 from app.services.i18n import t
 
 
 class CreditError(Exception):
-    def __init__(self, message: str, *, user_message: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        user_message: str | None = None,
+        code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.user_message = user_message
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,13 @@ def _next_refill_at(now_utc: datetime) -> datetime:
     return next_local.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+async def _get_basic_monthly_seconds(session: AsyncSession) -> int:
+    value = await get_basic_monthly_seconds(session)
+    if value and value > 0:
+        return value
+    return settings.basic_monthly_seconds
+
+
 async def _get_or_create_balance_for_update(
     session: AsyncSession, user_id: int, now_utc: datetime
 ) -> CreditBalance:
@@ -53,7 +68,7 @@ async def _get_or_create_balance_for_update(
         return balance
     balance = CreditBalance(
         user_id=user_id,
-        basic_remaining_seconds=settings.basic_monthly_seconds,
+        basic_remaining_seconds=await _get_basic_monthly_seconds(session),
         topup_remaining_seconds=0,
         next_basic_refill_at=_next_refill_at(now_utc),
     )
@@ -62,7 +77,7 @@ async def _get_or_create_balance_for_update(
         CreditLedger(
             user_id=user_id,
             event_type="basic_refill",
-            basic_delta_seconds=settings.basic_monthly_seconds,
+            basic_delta_seconds=balance.basic_remaining_seconds,
             topup_delta_seconds=0,
             reason="initial",
         )
@@ -77,7 +92,7 @@ async def _apply_refill_if_due(
     if now_utc < balance.next_basic_refill_at:
         return
     previous = balance.basic_remaining_seconds
-    balance.basic_remaining_seconds = settings.basic_monthly_seconds
+    balance.basic_remaining_seconds = await _get_basic_monthly_seconds(session)
     balance.next_basic_refill_at = _next_refill_at(now_utc)
     delta = balance.basic_remaining_seconds - previous
     session.add(
@@ -89,6 +104,33 @@ async def _apply_refill_if_due(
             reason="monthly",
         )
     )
+
+
+async def _basic_used_this_month(session: AsyncSession, user_id: int, now_utc: datetime) -> int:
+    month_start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    used = (
+        await session.execute(
+            select(func.coalesce(func.sum(CreditLedger.basic_delta_seconds), 0)).where(
+                CreditLedger.user_id == user_id,
+                CreditLedger.event_type == "charge",
+                CreditLedger.created_at >= month_start,
+            )
+        )
+    ).scalar_one()
+    return int(-used or 0)
+
+
+async def _enforce_basic_limit(
+    session: AsyncSession, balance: CreditBalance, now_utc: datetime
+) -> tuple[int, int]:
+    limit_seconds = await _get_basic_monthly_seconds(session)
+    used_basic = await _basic_used_this_month(session, balance.user_id, now_utc)
+    allowed_remaining = max(0, limit_seconds - used_basic)
+    if balance.basic_remaining_seconds > allowed_remaining:
+        balance.basic_remaining_seconds = allowed_remaining
+    if balance.basic_remaining_seconds < 0:
+        balance.basic_remaining_seconds = 0
+    return limit_seconds, used_basic
 
 
 def _calculate_charge_seconds(audio_duration_seconds: int) -> int:
@@ -114,6 +156,7 @@ async def reserve_credits(
     now_utc = _now_utc()
     balance = await _get_or_create_balance_for_update(session, user_id, now_utc)
     await _apply_refill_if_due(session, balance, now_utc)
+    await _enforce_basic_limit(session, balance, now_utc)
     charge_seconds = _calculate_charge_seconds(audio_duration_seconds)
     if charge_seconds <= 0:
         raise CreditError(
@@ -121,7 +164,11 @@ async def reserve_credits(
         )
     total_available = balance.basic_remaining_seconds + balance.topup_remaining_seconds
     if total_available < charge_seconds:
-        raise CreditError("Insufficient credits", user_message=_out_of_credit_message(balance))
+        raise CreditError(
+            "Insufficient credits",
+            user_message=_out_of_credit_message(balance),
+            code="out_of_credit",
+        )
     basic_deduct = min(balance.basic_remaining_seconds, charge_seconds)
     remaining = charge_seconds - basic_deduct
     topup_deduct = min(balance.topup_remaining_seconds, remaining)
@@ -250,22 +297,14 @@ async def get_profile_summary(session: AsyncSession, user_id: int) -> dict[str, 
     now_utc = _now_utc()
     balance = await _get_or_create_balance_for_update(session, user_id, now_utc)
     await _apply_refill_if_due(session, balance, now_utc)
+    basic_limit, used_basic = await _enforce_basic_limit(session, balance, now_utc)
     await session.commit()
-    month_start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    usage = (
-        await session.execute(
-            select(func.coalesce(func.sum(CreditLedger.charge_seconds), 0)).where(
-                CreditLedger.user_id == user_id,
-                CreditLedger.event_type == "charge",
-                CreditLedger.created_at >= month_start,
-            )
-        )
-    ).scalar_one()
     return {
         "basic_remaining_seconds": balance.basic_remaining_seconds,
         "topup_remaining_seconds": balance.topup_remaining_seconds,
         "next_basic_refill_at": balance.next_basic_refill_at,
-        "monthly_used_seconds": int(usage or 0),
+        "basic_used_seconds": used_basic,
+        "basic_monthly_seconds": basic_limit,
     }
 
 

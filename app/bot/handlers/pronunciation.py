@@ -13,6 +13,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.exceptions import TelegramBadRequest
 
 from app.bot.keyboards.main import main_menu_kb
+from app.bot.keyboards.credits import credits_buy_kb
 from sqlalchemy import select
 
 from app.bot.keyboards.pronunciation import (
@@ -20,19 +21,18 @@ from app.bot.keyboards.pronunciation import (
     quiz_done_kb,
     quiz_kb,
     results_kb,
-    select_menu_kb,
-    select_results_kb,
     single_mode_kb,
     single_result_kb,
     single_word_kb,
 )
 from app.config import settings
-from app.db.repo.pronunciation_logs import get_today_pronunciation_count, log_pronunciation
+from app.db.repo.pronunciation_logs import log_pronunciation
 from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_or_create_user
 from app.db.models import Word
-from app.db.repo.words import get_word, list_recent_words, search_words
+from app.db.repo.words import count_words, get_word, list_recent_words, search_words
 from app.db.session import AsyncSessionLocal
+from app.bot.handlers.word_selection import start_selection
 from app.services.feature_flags import is_feature_enabled
 from app.services.pronunciation.base import PronunciationEngine
 from app.services.pronunciation.stt_engine import STTPronunciationEngine
@@ -40,13 +40,7 @@ from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
 from app.services.stt.assemblyai_transcribe import AssemblyAITranscribeSTT
 from app.services.i18n import t
-from app.db.repo.credits import (
-    CreditError,
-    finalize_charge,
-    get_credit_snapshot,
-    refund_charge,
-    reserve_credits,
-)
+from app.db.repo.credits import CreditError, finalize_charge, refund_charge, reserve_credits
 from app.db.repo.srs import get_due_words
 from app.utils.audio import convert_to_wav, download_voice
 
@@ -66,11 +60,6 @@ class PronunciationStates(StatesGroup):
     search_query = State()
     search_results = State()
     recent_results = State()
-    select_menu = State()
-    select_search_query = State()
-    select_search_results = State()
-    select_recent_results = State()
-    select_selected_results = State()
     waiting_voice_single = State()
     quiz_active = State()
 
@@ -207,68 +196,6 @@ async def _render_results(callback: CallbackQuery, state: FSMContext, page: int,
     )
 
 
-async def _render_select_results(
-    message: Message, state: FSMContext, page: int, context: str, user_id: int
-) -> None:
-    data = await state.get_data()
-    selected_ids = set(data.get("selected_ids", []))
-    async with AsyncSessionLocal() as session:
-        user = await get_or_create_user(session, user_id)
-        if context == "search":
-            query = data.get("query", "")
-            words = await search_words(session, user.id, query, PAGE_SIZE + 1, page * PAGE_SIZE)
-        elif context == "selected":
-            if not selected_ids:
-                await _edit_session_message(
-                    message,
-                    state,
-                    t("pronunciation.selected_empty"),
-                    reply_markup=select_menu_kb(0),
-                )
-                await state.set_state(PronunciationStates.select_menu)
-                return
-            result = await session.execute(
-                select(Word)
-                .where(Word.user_id == user.id, Word.id.in_(selected_ids))
-                .order_by(Word.created_at.desc())
-                .limit(PAGE_SIZE + 1)
-                .offset(page * PAGE_SIZE)
-            )
-            words = list(result.scalars().all())
-        else:
-            words = await list_recent_words(session, user.id, PAGE_SIZE + 1, page * PAGE_SIZE)
-
-    if not words:
-        await _edit_session_message(
-            message,
-            state,
-            t("common.nothing_found"),
-            reply_markup=select_menu_kb(len(selected_ids)),
-        )
-        await state.set_state(PronunciationStates.select_menu)
-        return
-
-    has_next = len(words) > PAGE_SIZE
-    words = words[:PAGE_SIZE]
-    items = [
-        (word.id, t("common.word_pair", word=word.word, translation=word.translation))
-        for word in words
-    ]
-    await state.update_data(context=context, page=page)
-    if context == "search":
-        title = t("pronunciation.results_search")
-    elif context == "selected":
-        title = t("pronunciation.results_selected")
-    else:
-        title = t("pronunciation.results_recent")
-    await _edit_session_message(
-        message,
-        state,
-        t("pronunciation.results_page", title=title, page=page + 1),
-        reply_markup=select_results_kb(items, selected_ids, page, context, has_next, len(selected_ids)),
-    )
-
-
 async def _cleanup_files(paths: list[Path]) -> None:
     for path in paths:
         try:
@@ -367,7 +294,10 @@ async def _process_voice(
         text = exc.user_message or t("pronunciation.credit_error")
         if retry_prompt and text != STT_UNAVAILABLE_MESSAGE:
             text = f"{text}\n\n{retry_prompt}"
-        await _edit_session_message(message, state, text, reply_markup=retry_markup)
+        reply_markup_final = retry_markup
+        if exc.code == "out_of_credit":
+            reply_markup_final = credits_buy_kb()
+        await _edit_session_message(message, state, text, reply_markup=reply_markup_final)
         return None
     except STTProviderError as exc:
         if start is not None:
@@ -643,6 +573,7 @@ async def pron_select_menu(callback: CallbackQuery, state: FSMContext) -> None:
             return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
+        total_words = await count_words(session, user.id)
     if not user_settings.pronunciation_enabled:
         await callback.message.edit_text(t("pronunciation.disabled_user"))
         await callback.answer()
@@ -651,87 +582,20 @@ async def pron_select_menu(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.edit_text(t("pronunciation.mode_only_single"))
         await callback.answer()
         return
-    await state.set_state(PronunciationStates.select_menu)
-    await state.update_data(selected_ids=[], pron_message_id=callback.message.message_id)
-    await callback.message.edit_text(t("pronunciation.select_quiz_title"), reply_markup=select_menu_kb(0))
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pron:select:menu")
-async def pron_select_menu_back(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    selected = data.get("selected_ids", [])
-    await state.set_state(PronunciationStates.select_menu)
-    await callback.message.edit_text(
-        t("pronunciation.select_quiz_title"),
-        reply_markup=select_menu_kb(len(selected)),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pron:select:recent")
-async def pron_select_recent(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(PronunciationStates.select_recent_results)
-    await _render_select_results(callback.message, state, 0, "recent", callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pron:select:search")
-async def pron_select_search(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(PronunciationStates.select_search_query)
-    await callback.message.edit_text(t("pronunciation.search_prompt"))
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pron:select:view")
-async def pron_select_view(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(PronunciationStates.select_selected_results)
-    await _render_select_results(callback.message, state, 0, "selected", callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("pron:select:toggle:"))
-async def pron_select_toggle(callback: CallbackQuery, state: FSMContext) -> None:
-    _, _, _, word_id, context, page = callback.data.split(":")
-    data = await state.get_data()
-    selected_ids = set(data.get("selected_ids", []))
-    word_id_int = int(word_id)
-    if word_id_int in selected_ids:
-        selected_ids.remove(word_id_int)
-    else:
-        selected_ids.add(word_id_int)
-    await state.update_data(selected_ids=list(selected_ids))
-    await _render_select_results(callback.message, state, int(page), context, callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("pron:select:recent:page:"))
-async def pron_select_recent_page(callback: CallbackQuery, state: FSMContext) -> None:
-    page = int(callback.data.split(":")[-1])
-    await _render_select_results(callback.message, state, page, "recent", callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("pron:select:search:page:"))
-async def pron_select_search_page(callback: CallbackQuery, state: FSMContext) -> None:
-    page = int(callback.data.split(":")[-1])
-    await _render_select_results(callback.message, state, page, "search", callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "pron:select:start")
-async def pron_select_start(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    selected_ids = data.get("selected_ids", [])
-    if len(selected_ids) < 3:
-        await callback.message.edit_text(
-            t("pronunciation.select_min_words"),
-            reply_markup=select_menu_kb(len(selected_ids)),
-        )
+    if total_words < 4:
+        await callback.message.edit_text(t("quiz.need_words"))
         await callback.answer()
         return
+    await state.clear()
+    await start_selection(callback, state, "pron_selected")
+
+
+async def start_pron_quiz_selected_words(
+    message: Message, state: FSMContext, selected_ids: list[int], user_id: int
+) -> None:
+    await state.clear()
     async with AsyncSessionLocal() as session:
-        user = await get_or_create_user(session, callback.from_user.id)
+        user = await get_or_create_user(session, user_id)
         user_settings = await get_or_create_user_settings(session, user)
         result = await session.execute(
             select(Word)
@@ -739,8 +603,9 @@ async def pron_select_start(callback: CallbackQuery, state: FSMContext) -> None:
             .order_by(Word.created_at.desc())
         )
         words = list(result.scalars().all())
-    await _start_pron_quiz(callback.message, state, words, user_settings.quiz_words_per_session)
-    await callback.answer()
+    if message.from_user and message.from_user.is_bot:
+        await state.update_data(pron_message_id=message.message_id)
+    await _start_pron_quiz(message, state, words, user_settings.quiz_words_per_session)
 
 
 async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
@@ -890,24 +755,6 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
             )
             await state.clear()
             return
-        if user_settings.daily_limit_enabled and user_settings.daily_pronunciation_limit > 0:
-            credit_snapshot = await get_credit_snapshot(session, user.id)
-            used = await get_today_pronunciation_count(session, user.id)
-            if (
-                used >= user_settings.daily_pronunciation_limit
-                and credit_snapshot["topup_remaining_seconds"] <= 0
-            ):
-                logger.info(
-                    "STT_LIMIT_BLOCK user=%s used=%s limit=%s topup=%s",
-                    user.id,
-                    used,
-                    user_settings.daily_pronunciation_limit,
-                    credit_snapshot["topup_remaining_seconds"],
-                )
-                await _edit_session_message(
-                    message, state, t("pronunciation.daily_limit_reached")
-                )
-                return
 
     data = await state.get_data()
     if data.get("stt_processing"):

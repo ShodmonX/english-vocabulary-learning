@@ -90,14 +90,14 @@ async def admin_credits_add_seconds(message: Message, state: FSMContext) -> None
 async def admin_credits_forward(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
-    await state.set_state(AdminStates.menu)
+    await state.set_state(AdminStates.credits_forward_wait)
     await callback.message.edit_text(
         t("admin_credits.forward_instructions")
     )
     await callback.answer()
 
 
-@router.message(F.forward_from)
+@router.message(AdminStates.credits_forward_wait, F.forward_from)
 async def admin_credits_forward_message(message: Message, state: FSMContext) -> None:
     if not await ensure_admin_message(message):
         return
@@ -114,7 +114,7 @@ async def admin_credits_forward_message(message: Message, state: FSMContext) -> 
     await message.answer(t("admin_credits.prompt_seconds"))
 
 
-@router.message(F.forward_sender_name)
+@router.message(AdminStates.credits_forward_wait, F.forward_sender_name)
 async def admin_credits_forward_missing_id(message: Message) -> None:
     if not await ensure_admin_message(message):
         return

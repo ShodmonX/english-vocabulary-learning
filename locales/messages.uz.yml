@@ -20,8 +20,9 @@ profile:
 
     BASIC: {basic}s
     TOPUP: {topup}s
+    Oylik BASIC limit: {basic_limit}s
     Keyingi yangilanish: {refill} ({timezone})
-    Oy bo‘yicha ishlatilgan: {used}s
+    Oy bo‘yicha ishlatilgan: {used}s / {basic_limit}s
   topup_admin:
     header: "💳 Admin orqali to‘ldirish paketlari:"
     item: |
@@ -106,7 +107,6 @@ help_content:
 
     Qanday ishlaydi?
     - Due so‘zlar: {due_count}
-    - Sessiya limiti: {review_limit}
     - SM-2 baholash: AGAIN/HARD/GOOD/EASY
 
     Tezkor misol:
@@ -185,7 +185,6 @@ help_content:
     Nima? Mashq, quiz, talaffuz va bildirishnomalarni boshqarasiz.
 
     Sizda hozir:
-    - Kunlik mashq limiti: {review_limit}
     - Quiz savollari: {quiz_size}
     - Avto tarjima: {translation_status}
     - {notif_line}
@@ -303,9 +302,51 @@ admin:
     ID: {telegram_id}
     Username: @{username}
     Full name: {full_name}
-  no_permission: "⛔ Sizda admin huquqi yo‘q."
+  no_permission: "⛔️ Sizda bu amal uchun ruxsat yo‘q."
   menu_title: "🛠 ADMIN PANEL"
   exit: "🚪 Admin paneldan chiqildi."
+
+admin_admins:
+  menu_title: "👥 Adminlar boshqaruvi"
+  add_method_prompt: "Admin qo‘shish usulini tanlang:"
+  add_id_prompt: "Admin qilinadigan user ID ni yuboring:"
+  add_forward_prompt: "Admin qilmoqchi bo‘lgan user xabarini menga forward qiling."
+  forward_missing: "Forward orqali user ID aniqlanmadi. ID orqali qo‘shing: /addadmin <id>"
+  invalid_id: "❗ Telegram ID raqam bo‘lishi kerak."
+  user_not_found: "User topilmadi. Avval u botdan foydalangan bo‘lishi kerak."
+  already_admin: "Bu user allaqachon admin."
+  preview: |
+    Admin qilishni tasdiqlang:
+    👤 {name}
+    👤 Username: {username}
+    🆔 ID: {tg_user_id}
+    📚 So‘zlar: {words_count}
+    ⏳ Due: {due_count}
+    🗓 Ro‘yxatdan: {created_at}
+    🕒 Oxirgi faollik: {last_activity}
+  added: "✅ {name} admin qilindi."
+  list_title: "Adminlar:"
+  detail: |
+    Admin ma'lumotlari:
+    👤 {name}
+    👤 Username: {username}
+    🆔 ID: {tg_user_id}
+    👑 Owner: {is_owner}
+    👥 Qo‘shgan: {added_by}
+    🗓 Qo‘shilgan: {added_at}
+  owner_yes: "ha"
+  owner_no: "yo‘q"
+  remove_confirm: "Rostdan ham {name} ni adminlikdan olmoqchimisiz?"
+  remove_blocked: "⛔️ Asosiy adminni o‘chirib bo‘lmaydi."
+  removed: "✅ {name} adminlikdan olindi."
+  command_usage: "Foydalanish: /addadmin <tg_user_id>"
+
+admin_settings:
+  basic_limit_body: "Hozirgi oylik BASIC kredit: {value}s"
+  basic_limit_prompt: "Yangi oylik BASIC limitni sekundda yuboring (faqat son):"
+  basic_limit_invalid: "⚠️ Noto‘g‘ri qiymat. Faqat musbat son yuboring."
+  basic_limit_confirm: "Oylik BASIC limitni {old}s dan {new}s ga o‘zgartirasizmi?"
+  basic_limit_updated: "✅ Oylik BASIC limit yangilandi: {new}s"
 
 admin_credits:
   menu: "💳 Kreditlar bo‘limi:"
@@ -363,13 +404,18 @@ admin_users:
   invalid_id: "❗ Telegram ID raqam bo‘lishi kerak."
   user_not_found: "🫤 User topilmadi."
   summary: |
-    👤 User summary:
-    telegram_id: {telegram_id}
-    username: {username}
-    so‘zlar: {words}
-    due: {due}
-    oxirgi activity: {last_activity}
-    bloklangan: {blocked}
+    👤 User summary
+    ID: {telegram_id}
+    Username: {username}
+    Holat: {blocked}
+
+    📚 So‘zlar: {words} | Due: {due}
+    🕒 Oxirgi activity: {last_activity}
+
+    💳 BASIC qolgan: {basic_remaining}s
+    💳 TOPUP qolgan: {topup_remaining}s
+    🧾 Oylik BASIC: {basic_used}s / {basic_limit}s
+    🔁 Keyingi yangilanish: {next_refill}
   blocked_yes: "ha"
   blocked_no: "yo‘q"
   user_not_selected: "⚠️ User tanlanmagan."
@@ -478,8 +524,9 @@ quiz:
     ✅ To‘g‘ri: {correct}
     ❌ Xato: {wrong}
     📈 Aniqlik: {accuracy:.0f}%
+  menu_prompt: "🧩 Quiz rejimini tanlang:"
   disabled: "🛑 Hozircha quiz o‘chirilgan."
-  need_words: "🙂 Quiz uchun kamida 4 ta so‘z kerak. Keling, avval so‘z qo‘shamiz!"
+  need_words: "Quiz ishlashi uchun kamida 4 ta so‘z bo‘lishi kerak. Avval so‘z qo‘shing."
   questions_over: "🙂 Savollar tugagan."
   card_not_found: "⚠️ Karta topilmadi. Qaytadan urinib ko‘ring 🙂"
   feedback_correct: "✅ To‘g‘ri! Zo‘r ketayapsiz 💪"
@@ -488,6 +535,18 @@ quiz:
     🚪 Quiz to‘xtatildi.
 
     {result}
+
+selection:
+  menu_title: "🗂 So‘z tanlash (tanlangan: {count})"
+  results_title: "{title} — sahifa {page}"
+  title_recent: "🕒 Oxirgi so‘zlar"
+  title_search: "🔎 Qidiruv"
+  title_selected: "✅ Tanlangan so‘zlar"
+  search_prompt: "🔎 Qidirish uchun so‘z kiriting:"
+  search_empty: "⚠️ Bo‘sh qidiruv bo‘lmaydi."
+  no_words: "🫤 Hozircha so‘z topilmadi."
+  min_words: "Quiz uchun kamida 4 ta so‘z tanlashingiz kerak."
+  cancelled: "✅ Tanlash bekor qilindi."
 
 stats:
   weekly_line: "{day}: {total} (K:{known} F:{forgot} S:{skip})"
@@ -533,14 +592,6 @@ settings:
   learning_srs_notice: "ℹ️ Takrorlash algoritmi hozircha standart (SRS)."
   learning_words_prompt: "📚 Kunlik maqsadni kiriting (5..100):"
   learning_range: "❗ 5..100 oralig‘ida kiriting."
-  limits_body: |
-    ⚡ Cheklovlar
-    ⚡ Talaffuz limiti: {limit}
-    🔒 Limitlar: {status}
-  limits_unlimited: "cheksiz"
-  limits_prompt: "⚡ Kunlik talaffuz limitini kiriting (0..100):"
-  limits_range: "❗ 0..100 oralig‘ida kiriting."
-  limits_quiz_soon: "ℹ️ Quiz limitlari tez orada qo‘shiladi."
   advanced_title: "🛠 Texnik sozlamalar"
   advanced_reset_prompt: "Rostdan ham barcha sozlamalarni defaultga qaytarmoqchimisiz?"
   advanced_reset_done: "✅ Sozlamalar defaultga qaytarildi."
@@ -665,7 +716,6 @@ pronunciation:
 
     Ajoyib ish! Davom eting! 💪
   quiz_stopped: "🛑 Quiz to‘xtatildi"
-  daily_limit_reached: "⚠️ Bugungi talaffuz limitiga yetdingiz 🙂"
   processing_wait: "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
 
 add_word:
@@ -708,6 +758,7 @@ commands:
   profile: "Profil"
   admin: "Admin panel"
   addcredit: "Kredit qo‘shish"
+  addadmin: "Admin qo‘shish"
 
 system:
   maintenance: "🛠 Hozir texnik ishlar ketmoqda. Keyinroq urinib ko‘ring."
@@ -723,6 +774,7 @@ credits:
     Kredit tugadi. Iltimos, keyinroq yana urinib ko‘ring yoki admin’dan kredit so‘rang.
     BASIC: {basic}s
     TOPUP: {topup}s
+  topup_prompt: "Kredit sotib olish usulini tanlang:"
   invalid_duration: "⚠️ Audio davomiyligi noto‘g‘ri."
 
 packages:

@@ -10,7 +10,6 @@ def settings_main_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=b("settings_menu.tests"), callback_data="settings:tests")],
             [InlineKeyboardButton(text=b("settings_menu.language"), callback_data="settings:language")],
             [InlineKeyboardButton(text=b("settings_menu.notifications"), callback_data="settings:notifications")],
-            [InlineKeyboardButton(text=b("settings_menu.limits"), callback_data="settings:limits")],
             [InlineKeyboardButton(text=b("settings_menu.advanced"), callback_data="settings:advanced")],
             [InlineKeyboardButton(text=b("common.back"), callback_data="settings:back")],
         ]

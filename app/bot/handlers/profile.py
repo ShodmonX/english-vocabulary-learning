@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 
 from app.bot.keyboards.profile import profile_back_kb, profile_refresh_kb, stars_packages_kb
+from app.bot.keyboards.credits import credits_topup_methods_kb
 from app.config import settings
 from sqlalchemy import select
 
@@ -39,7 +40,8 @@ def _profile_text(user, summary: dict[str, object]) -> str:
         topup=summary["topup_remaining_seconds"],
         refill=_format_refill(summary["next_basic_refill_at"]),
         timezone=settings.timezone,
-        used=summary["monthly_used_seconds"],
+        used=summary["basic_used_seconds"],
+        basic_limit=summary["basic_monthly_seconds"],
     )
 
 
@@ -128,6 +130,15 @@ async def profile_topup_stars(callback: CallbackQuery) -> None:
     keys = [pkg.package_key for pkg in packages]
     await callback.message.edit_text(
         _packages_stars_text(packages), reply_markup=stars_packages_kb(keys)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "credits:topup")
+async def credits_topup_prompt(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        t("credits.topup_prompt"),
+        reply_markup=credits_topup_methods_kb(),
     )
     await callback.answer()
 

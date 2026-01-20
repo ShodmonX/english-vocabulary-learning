@@ -52,7 +52,6 @@ async def _build_context(user_id: int) -> HelpContext:
             return HelpContext(
                 word_count=0,
                 due_count=0,
-                review_limit=10,
                 quiz_size=10,
                 notifications=False,
                 notification_time=None,
@@ -70,7 +69,6 @@ async def _build_context(user_id: int) -> HelpContext:
         return HelpContext(
             word_count=word_count,
             due_count=due_count,
-            review_limit=user_settings.learning_words_per_day,
             quiz_size=user_settings.quiz_words_per_session,
             notifications=user_settings.notifications_enabled,
             notification_time=user_settings.notification_time.strftime("%H:%M")

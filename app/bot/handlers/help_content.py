@@ -9,7 +9,6 @@ from app.services.i18n import t
 class HelpContext:
     word_count: int
     due_count: int
-    review_limit: int
     quiz_size: int
     notifications: bool
     notification_time: str | None
@@ -61,7 +60,6 @@ def build_help_content(ctx: HelpContext) -> dict[str, list[str]]:
             t(
                 "help_content.srs",
                 due_count=ctx.due_count,
-                review_limit=ctx.review_limit,
             )
         ],
         "quiz": [t("help_content.quiz", quiz_size=ctx.quiz_size)],
@@ -76,7 +74,6 @@ def build_help_content(ctx: HelpContext) -> dict[str, list[str]]:
         "settings": [
             t(
                 "help_content.settings",
-                review_limit=ctx.review_limit,
                 quiz_size=ctx.quiz_size,
                 translation_status=translation_status,
                 notif_line=notif_line,

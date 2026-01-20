@@ -73,8 +73,6 @@ class UserSettings(Base):
         nullable=False,
     )
     auto_translation_suggest: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    daily_limit_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    daily_pronunciation_limit: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notification_time: Mapped[time | None] = mapped_column(Time)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -295,6 +293,17 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class SettingsChangeLog(Base):
+    __tablename__ = "settings_change_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admin_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    setting_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    old_value: Mapped[str | None] = mapped_column(Text)
+    new_value: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
     __table_args__ = (Index("ix_admin_audit_created_at", "created_at"),)
@@ -305,6 +314,17 @@ class AdminAuditLog(Base):
     target_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class BotAdmin(Base):
+    __tablename__ = "bot_admins"
+
+    tg_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    first_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    username: Mapped[str | None] = mapped_column(String(64))
+    added_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class TrainingSession(Base):

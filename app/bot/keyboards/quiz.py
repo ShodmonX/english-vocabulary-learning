@@ -21,3 +21,12 @@ def quiz_options_kb(options: list[tuple[int, str]]) -> InlineKeyboardMarkup:
         rows.append(row)
     rows.append([InlineKeyboardButton(text=b("quiz.exit"), callback_data="quiz:exit")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def quiz_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=b("quiz.menu_last"), callback_data="quiz:menu:last")],
+            [InlineKeyboardButton(text=b("quiz.menu_selected"), callback_data="quiz:menu:selected")],
+        ]
+    )
