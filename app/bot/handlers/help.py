@@ -16,6 +16,7 @@ from app.db.repo.words import count_words
 from app.db.session import AsyncSessionLocal
 from app.services.feature_flags import is_feature_enabled
 from app.bot.handlers.help_content import HelpContext, build_help_content
+from app.services.i18n import t
 
 router = Router()
 
@@ -89,7 +90,7 @@ async def help_entry(message: Message, state: FSMContext) -> None:
     await _edit_or_send(
         message,
         state,
-        "❓ Yordam bo‘limi\nKerakli bo‘limni tanlang:",
+        t("help.menu"),
         reply_markup=help_menu_kb(ctx.is_admin),
     )
 
@@ -100,7 +101,7 @@ async def help_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await _edit_or_send(
         callback.message,
         state,
-        "❓ Yordam bo‘limi\nKerakli bo‘limni tanlang:",
+        t("help.menu"),
         reply_markup=help_menu_kb(ctx.is_admin),
     )
     await callback.answer()
@@ -109,12 +110,12 @@ async def help_menu(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "help:exit")
 async def help_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(help_message_id=None)
-    await callback.message.edit_text("✅ Yordam yopildi.")
+    await callback.message.edit_text(t("help.closed"))
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         streak = user.current_streak if user else 0
     await callback.message.answer(
-        "Bosh menyu",
+        t("help.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),
@@ -142,10 +143,10 @@ async def help_section(callback: CallbackQuery, state: FSMContext) -> None:
     content = build_help_content(ctx)
     pages = content.get(section)
     if not pages:
-        await callback.answer("⚠️ Bo‘lim topilmadi.")
+        await callback.answer(t("help.section_not_found"))
         return
     if section == "admin" and not ctx.is_admin:
-        await callback.answer("⛔ Sizda admin huquqi yo‘q.", show_alert=True)
+        await callback.answer(t("admin.no_permission"), show_alert=True)
         return
     page = max(0, min(page, len(pages) - 1))
     text = pages[page]

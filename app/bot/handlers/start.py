@@ -8,6 +8,7 @@ from app.db.repo.user_settings import get_or_create_user_settings
 from app.config import settings
 from app.db.repo.users import create_user, get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
@@ -31,16 +32,9 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             reminder_service.schedule_user(
                 message.from_user.id, user_settings.notification_time, user.timezone
             )
-            text = (
-                "👋 Assalomu alaykum! Ingliz tilini o‘rganishni bugun boshlaymizmi? 🇬🇧✨\n"
-                "Keling, har kuni oz-ozdan, lekin samarali o‘rganamiz!\n"
-                "Pastdagi menyudan mashqni boshlang yoki yangi so‘z qo‘shing."
-            )
+            text = t("start.welcome_notifications")
         else:
-            text = (
-                "👋 Assalomu alaykum! Qaytganingizdan xursandman.\n"
-                "Quyidagi menyudan davom etishni tanlang 😊"
-            )
+            text = t("start.welcome_default")
 
     is_admin = message.from_user.id in settings.admin_user_ids
     await message.answer(
@@ -52,13 +46,13 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 async def _notify_admins_new_user(message: Message, telegram_id: int) -> None:
     if not settings.admin_user_ids:
         return
-    username = message.from_user.username or "—"
-    full_name = message.from_user.full_name or "—"
-    text = (
-        "🆕 Yangi user /start bosdi\n"
-        f"ID: {telegram_id}\n"
-        f"Username: @{username}\n"
-        f"Full name: {full_name}"
+    username = message.from_user.username or t("common.none")
+    full_name = message.from_user.full_name or t("common.none")
+    text = t(
+        "admin.new_user",
+        telegram_id=telegram_id,
+        username=username,
+        full_name=full_name,
     )
     for admin_id in settings.admin_user_ids:
         try:

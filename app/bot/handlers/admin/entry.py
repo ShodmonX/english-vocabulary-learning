@@ -6,13 +6,14 @@ from aiogram.types import Message
 from app.bot.handlers.admin.common import ensure_admin_message
 from app.bot.keyboards.admin.main import admin_menu_kb
 from app.bot.handlers.admin.states import AdminStates
+from app.services.i18n import t
 
 router = Router()
 
 
 async def open_admin_panel(message: Message, state: FSMContext) -> None:
     await state.set_state(AdminStates.menu)
-    await message.answer("🛠 ADMIN PANEL", reply_markup=admin_menu_kb())
+    await message.answer(t("admin.menu_title"), reply_markup=admin_menu_kb())
 
 
 @router.message(Command("admin"))

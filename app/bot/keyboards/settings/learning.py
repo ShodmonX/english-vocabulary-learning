@@ -1,24 +1,26 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.services.i18n import b
+
 
 def learning_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📚 Kuniga nechta so‘z?", callback_data="settings:learning:words_per_day"
+                    text=b("settings_learning.words_per_day"), callback_data="settings:learning:words_per_day"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🔁 Takrorlash algoritmi", callback_data="settings:learning:srs"
+                    text=b("settings_learning.srs"), callback_data="settings:learning:srs"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="🔄 Defaultga qaytarish", callback_data="settings:learning:reset"
+                    text=b("settings_learning.reset"), callback_data="settings:learning:reset"
                 )
             ],
-            [InlineKeyboardButton(text="◀️ Orqaga", callback_data="settings:menu")],
+            [InlineKeyboardButton(text=b("common.back"), callback_data="settings:menu")],
         ]
     )

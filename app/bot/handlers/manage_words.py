@@ -32,6 +32,7 @@ from app.db.repo.words import (
 )
 from app.db.session import AsyncSessionLocal
 from app.utils.bad_words import contains_bad_words
+from app.services.i18n import b, t
 
 router = Router()
 
@@ -51,13 +52,13 @@ class ManageStates(StatesGroup):
 
 
 def _word_label(word: str, translation: str) -> str:
-    return f"{word} — {translation}"
+    return t("manage.word_label", word=word, translation=translation)
 
 
 def _detail_text(word: str, translation: str, example: str | None) -> str:
-    text = f"📌 *{word}*\n📝 Ma’nosi: {translation}"
+    text = t("manage.detail", word=word, translation=translation)
     if example:
-        text += f"\n💬 Misol: {example}"
+        text += "\n" + t("manage.example", example=example)
     return text
 
 
@@ -67,13 +68,15 @@ async def _edit_word_detail(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         word = await get_word(session, user.id, word_id)
 
     if not word:
-        await callback.message.edit_text("So‘z topilmadi 🙂", reply_markup=manage_menu_kb())
+        await callback.message.edit_text(
+            t("manage.word_not_found"), reply_markup=manage_menu_kb()
+        )
         await state.set_state(ManageStates.menu)
         return
 
@@ -97,13 +100,13 @@ async def _send_word_detail(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         word = await get_word(session, user.id, word_id)
 
     if not word:
-        await message.answer("So‘z topilmadi 🙂", reply_markup=manage_menu_kb())
+        await message.answer(t("manage.word_not_found"), reply_markup=manage_menu_kb())
         await state.set_state(ManageStates.menu)
         return
 
@@ -136,7 +139,7 @@ async def _require_user(message: Message) -> int | None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             return None
         return user.id
 
@@ -149,7 +152,7 @@ async def _render_search_results(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         words = await search_words(
@@ -157,7 +160,7 @@ async def _render_search_results(
         )
 
     if not words:
-        await callback.message.edit_text("Hech narsa topilmadi 🙂", reply_markup=manage_menu_kb())
+        await callback.message.edit_text(t("common.nothing_found"), reply_markup=manage_menu_kb())
         await state.set_state(ManageStates.menu)
         return
 
@@ -166,7 +169,7 @@ async def _render_search_results(
     items = [(word.id, _word_label(word.word, word.translation)) for word in words]
     await state.update_data(context="search", page=page)
     await callback.message.edit_text(
-        f"🔎 Natijalar ({page + 1}):",
+        t("manage.search_results", page=page + 1),
         reply_markup=results_kb(items, page, "search", has_next),
     )
 
@@ -179,7 +182,7 @@ async def _render_search_results_message(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         words = await search_words(
@@ -187,7 +190,7 @@ async def _render_search_results_message(
         )
 
     if not words:
-        await message.answer("Hech narsa topilmadi 🙂", reply_markup=manage_menu_kb())
+        await message.answer(t("common.nothing_found"), reply_markup=manage_menu_kb())
         await state.set_state(ManageStates.menu)
         return
 
@@ -196,7 +199,7 @@ async def _render_search_results_message(
     items = [(word.id, _word_label(word.word, word.translation)) for word in words]
     await state.update_data(context="search", page=page)
     await message.answer(
-        f"🔎 Natijalar ({page + 1}):",
+        t("manage.search_results", page=page + 1),
         reply_markup=results_kb(items, page, "search", has_next),
     )
 
@@ -207,13 +210,13 @@ async def _render_recent_results(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         words = await list_recent_words(session, user.id, PAGE_SIZE + 1, page * PAGE_SIZE)
 
     if not words:
-        await callback.message.edit_text("Hozircha so‘zlar yo‘q 🙂", reply_markup=manage_menu_kb())
+        await callback.message.edit_text(t("manage.none_recent"), reply_markup=manage_menu_kb())
         await state.set_state(ManageStates.menu)
         return
 
@@ -222,12 +225,12 @@ async def _render_recent_results(
     items = [(word.id, _word_label(word.word, word.translation)) for word in words]
     await state.update_data(context="recent", page=page)
     await callback.message.edit_text(
-        f"🕒 Oxirgilar ({page + 1}):",
+        t("manage.recent_results", page=page + 1),
         reply_markup=results_kb(items, page, "recent", has_next),
     )
 
 
-@router.message(F.text == "🗂 So‘zlarim")
+@router.message(F.text == b("menu.my_words"))
 async def open_manage_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     user_id = await _require_user(message)
@@ -238,9 +241,7 @@ async def open_manage_menu(message: Message, state: FSMContext) -> None:
         today = await count_words_today(session, user_id)
     await state.set_state(ManageStates.menu)
     await message.answer(
-        "🗂 So‘zlarni boshqarish\n"
-        f"📚 Jami so‘zlar: {total}\n"
-        f"✨ Bugun qo‘shilgan: {today}",
+        t("manage.menu_header", total=total, today=today),
         reply_markup=manage_menu_kb(),
     )
 
@@ -251,15 +252,13 @@ async def manage_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         total = await count_words(session, user.id)
         today = await count_words_today(session, user.id)
     await callback.message.edit_text(
-        "🗂 So‘zlarni boshqarish\n"
-        f"📚 Jami so‘zlar: {total}\n"
-        f"✨ Bugun qo‘shilgan: {today}",
+        t("manage.menu_header", total=total, today=today),
         reply_markup=manage_menu_kb(),
     )
     await callback.answer()
@@ -268,9 +267,7 @@ async def manage_menu(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "manage:search")
 async def manage_search(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(ManageStates.search_query)
-    await callback.message.edit_text(
-        "🔎 Qidirish uchun so‘z yozing (masalan: abandon)."
-    )
+    await callback.message.edit_text(t("manage.prompt_search"))
     await callback.answer()
 
 
@@ -278,7 +275,7 @@ async def manage_search(callback: CallbackQuery, state: FSMContext) -> None:
 async def manage_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip()
     if not query:
-        await message.answer("⚠️ Qidiruv so‘zi bo‘sh bo‘lmasin 🙂")
+        await message.answer(t("manage.search_empty"))
         return
     await state.update_data(query=query)
     await state.set_state(ManageStates.search_results)
@@ -331,7 +328,7 @@ async def manage_back(callback: CallbackQuery, state: FSMContext) -> None:
 async def manage_delete_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     _, _, word_id, context, page = callback.data.split(":")
     await callback.message.edit_text(
-        "🗑 Rostdan ham o‘chirmoqchimisiz?",
+        t("manage.delete_confirm"),
         reply_markup=delete_confirm_kb(int(word_id), context, int(page)),
     )
     await callback.answer()
@@ -346,7 +343,7 @@ async def manage_delete_confirm(callback: CallbackQuery, state: FSMContext) -> N
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         await delete_word(session, user.id, word_id_int)
@@ -363,7 +360,7 @@ async def manage_edit_menu(callback: CallbackQuery, state: FSMContext) -> None:
     _, _, word_id, context, page = callback.data.split(":")
     await state.update_data(word_id=int(word_id), context=context, page=int(page))
     await callback.message.edit_text(
-        "Nimani tahrirlaymiz?", reply_markup=edit_menu_kb(int(word_id), context, int(page))
+        t("manage.edit_menu_prompt"), reply_markup=edit_menu_kb(int(word_id), context, int(page))
     )
     await callback.answer()
 
@@ -375,15 +372,15 @@ async def manage_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
 
     if field == "word":
         await state.set_state(ManageStates.edit_word)
-        await callback.message.edit_text("✍️ Yangi so‘zni yozing:")
+        await callback.message.edit_text(t("manage.edit_word_prompt"))
     elif field == "translation":
         await state.set_state(ManageStates.edit_translation)
-        await callback.message.edit_text("✍️ Yangi tarjimani yozing:")
+        await callback.message.edit_text(t("manage.edit_translation_prompt"))
     else:
         await state.set_state(ManageStates.edit_example)
         await state.update_data(prompt_message_id=callback.message.message_id)
         await callback.message.edit_text(
-            "💬 Yangi misolni yozing:",
+            t("manage.edit_example_prompt"),
             reply_markup=example_skip_kb(int(word_id), context, int(page)),
         )
     await callback.answer()
@@ -393,12 +390,10 @@ async def manage_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
 async def manage_edit_word(message: Message, state: FSMContext) -> None:
     new_word = message.text.strip()
     if not new_word:
-        await message.answer("⚠️ So‘z bo‘sh bo‘lmasin 🙂")
+        await message.answer(t("manage.word_empty"))
         return
     if contains_bad_words(new_word):
-        await message.answer(
-            "⚠️ Bu so‘zni qabul qila olmayman. Iltimos, boshqa so‘z kiriting 🙂"
-        )
+        await message.answer(t("manage.word_bad"))
         return
     data = await state.get_data()
     word_id = data.get("word_id")
@@ -408,18 +403,16 @@ async def manage_edit_word(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         exists = await exists_word(session, user.id, new_word, exclude_word_id=word_id)
         if exists:
-            await message.answer(
-                f"⚠️ Bu so‘z sizda allaqachon bor: {new_word}. Boshqasini kiriting."
-            )
+            await message.answer(t("manage.word_exists", word=new_word))
             return
         await update_word_text(session, user.id, int(word_id), new_word)
 
-    await message.answer("✅ Yangilandi")
+    await message.answer(t("manage.updated"))
     await _send_word_detail(message, message.from_user.id, int(word_id), context, int(page), state)
 
 
@@ -427,12 +420,10 @@ async def manage_edit_word(message: Message, state: FSMContext) -> None:
 async def manage_edit_translation(message: Message, state: FSMContext) -> None:
     new_translation = message.text.strip()
     if not new_translation:
-        await message.answer("⚠️ Tarjima bo‘sh bo‘lmasin 🙂")
+        await message.answer(t("manage.translation_empty"))
         return
     if contains_bad_words(new_translation):
-        await message.answer(
-            "⚠️ Bu tarjimani qabul qila olmayman. Iltimos, boshqa tarjima yozing 🙂"
-        )
+        await message.answer(t("manage.translation_bad"))
         return
     data = await state.get_data()
     word_id = int(data.get("word_id"))
@@ -442,7 +433,7 @@ async def manage_edit_translation(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         duplicates = await find_words_by_translation(
@@ -454,9 +445,11 @@ async def manage_edit_translation(message: Message, state: FSMContext) -> None:
         await state.update_data(pending_translation=new_translation)
         await state.set_state(ManageStates.edit_translation_warning)
         await message.answer(
-            "⚠️ Eslatma: bu tarjima boshqa so‘zda ham ishlatilgan:\n"
-            f"{other.word} — {other.translation}\n\n"
-            "Baribir saqlaysizmi yoki boshqa tarjima kiritasizmi?",
+            t(
+                "manage.translation_duplicate",
+                word=other.word,
+                translation=other.translation,
+            ),
             reply_markup=translation_warning_kb(word_id, context, page),
         )
         return
@@ -464,12 +457,12 @@ async def manage_edit_translation(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         await update_translation(session, user.id, word_id, new_translation)
 
-    await message.answer("✅ Yangilandi")
+    await message.answer(t("manage.updated"))
     await _send_word_detail(message, message.from_user.id, word_id, context, page, state)
 
 
@@ -481,9 +474,7 @@ async def manage_translation_force(callback: CallbackQuery, state: FSMContext) -
         await callback.answer()
         return
     if contains_bad_words(pending):
-        await callback.message.answer(
-            "⚠️ Bu tarjimani qabul qila olmayman. Iltimos, boshqa tarjima yozing 🙂"
-        )
+        await callback.message.answer(t("manage.translation_bad"))
         await state.set_state(ManageStates.edit_translation)
         await callback.answer()
         return
@@ -493,12 +484,12 @@ async def manage_translation_force(callback: CallbackQuery, state: FSMContext) -
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         await update_translation(session, user.id, word_id_int, pending)
 
-    await callback.message.edit_text("✅ Yangilandi")
+    await callback.message.edit_text(t("manage.updated"))
     data = await state.get_data()
     context = data.get("context", "recent")
     page = int(data.get("page", 0))
@@ -509,7 +500,7 @@ async def manage_translation_force(callback: CallbackQuery, state: FSMContext) -
 @router.callback_query(F.data.startswith("word:translation_retry:"))
 async def manage_translation_retry(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(ManageStates.edit_translation)
-    await callback.message.edit_text("✍️ Yangi tarjimani yozing:")
+    await callback.message.edit_text(t("manage.edit_translation_prompt"))
     await callback.answer()
 
 
@@ -520,9 +511,7 @@ async def manage_edit_example(message: Message, state: FSMContext) -> None:
     word_id = int(data.get("word_id"))
     prompt_id = data.get("prompt_message_id")
     if new_example and contains_bad_words(new_example):
-        await message.answer(
-            "⚠️ Bu misolni qabul qila olmayman. Iltimos, boshqasini yozing 🙂"
-        )
+        await message.answer(t("manage.example_bad"))
         return
 
     if prompt_id:
@@ -533,7 +522,7 @@ async def manage_edit_example(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         await update_example(session, user.id, word_id, new_example)
@@ -542,7 +531,7 @@ async def manage_edit_example(message: Message, state: FSMContext) -> None:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         streak = user.current_streak if user else 0
     await message.answer(
-        "✅ Yangilandi",
+        t("manage.updated"),
         reply_markup=main_menu_kb(
             is_admin=message.from_user.id in settings.admin_user_ids, streak=streak
         ),
@@ -560,12 +549,12 @@ async def manage_example_skip(callback: CallbackQuery, state: FSMContext) -> Non
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         await update_example(session, user.id, word_id_int, None)
 
-    await callback.message.edit_text("✅ Yangilandi")
+    await callback.message.edit_text(t("manage.updated"))
     data = await state.get_data()
     context = data.get("context", "recent")
     page = int(data.get("page", 0))

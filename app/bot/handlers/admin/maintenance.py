@@ -14,6 +14,7 @@ from app.bot.keyboards.admin.maintenance import admin_maintenance_kb
 from app.db.repo.admin import log_admin_action
 from app.db.session import AsyncSessionLocal
 from app.services.log_buffer import get_last_errors
+from app.services.i18n import t
 
 router = Router()
 
@@ -22,7 +23,7 @@ router = Router()
 async def admin_maintenance_menu(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
-    await callback.message.edit_text("🧪 Debug / Maintenance:", reply_markup=admin_maintenance_kb())
+    await callback.message.edit_text(t("admin_maint.menu"), reply_markup=admin_maintenance_kb())
     await callback.answer()
 
 
@@ -33,7 +34,7 @@ async def admin_reset_fsm(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     async with AsyncSessionLocal() as session:
         await log_admin_action(session, callback.from_user.id, "fsm_reset", "system", None)
-    await callback.message.answer("✅ FSM reset qilindi.")
+    await callback.message.answer(t("admin_maint.fsm_reset_done"))
     await callback.answer()
 
 
@@ -44,7 +45,7 @@ async def admin_cleanup_temp(callback: CallbackQuery, state: FSMContext) -> None
     removed = _cleanup_temp_files()
     async with AsyncSessionLocal() as session:
         await log_admin_action(session, callback.from_user.id, "cleanup_temp", "system", None)
-    await callback.message.answer(f"🧹 Temp fayllar tozalandi: {removed} ta.")
+    await callback.message.answer(t("admin_maint.cleanup_done", count=removed))
     await callback.answer()
 
 
@@ -53,8 +54,8 @@ async def admin_show_logs(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
     errors = get_last_errors(10)
-    text = "📄 So‘nggi error log’lar:\n"
-    text += "\n".join(errors) if errors else "—"
+    text = t("admin_maint.logs_title") + "\n"
+    text += "\n".join(errors) if errors else t("common.none")
     await callback.message.answer(text)
     await callback.answer()
 

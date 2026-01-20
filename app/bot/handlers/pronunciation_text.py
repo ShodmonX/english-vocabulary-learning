@@ -8,6 +8,7 @@ from app.db.repo.users import get_or_create_user
 from app.db.repo.words import search_words
 from app.db.session import AsyncSessionLocal
 from app.bot.handlers.pronunciation import PAGE_SIZE, PronunciationStates, _render_select_results
+from app.services.i18n import t
 
 router = Router()
 
@@ -16,7 +17,7 @@ router = Router()
 async def pron_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip()
     if not query:
-        await message.answer("⚠️ Qidiruv so‘zi bo‘sh bo‘lmasin 🙂")
+        await message.answer(t("pronunciation.search_empty"))
         return
     await state.update_data(query=query)
     await state.set_state(PronunciationStates.search_results)
@@ -24,15 +25,22 @@ async def pron_search_query(message: Message, state: FSMContext) -> None:
         user = await get_or_create_user(session, message.from_user.id)
         words = await search_words(session, user.id, query, PAGE_SIZE + 1, 0)
     if not words:
-        await message.answer("Hech narsa topilmadi 🙂", reply_markup=single_mode_kb())
+        await message.answer(t("common.nothing_found"), reply_markup=single_mode_kb())
         await state.set_state(PronunciationStates.single_select_mode)
         return
     has_next = len(words) > PAGE_SIZE
     words = words[:PAGE_SIZE]
-    items = [(word.id, f"{word.word} — {word.translation}") for word in words]
+    items = [
+        (word.id, t("common.word_pair", word=word.word, translation=word.translation))
+        for word in words
+    ]
     await state.update_data(context="search", page=0)
     await message.answer(
-        "🔎 Natijalar (1):",
+        t(
+            "pronunciation.results_page",
+            title=t("pronunciation.results_search"),
+            page=1,
+        ),
         reply_markup=results_kb(items, 0, "search", has_next),
     )
 
@@ -41,7 +49,7 @@ async def pron_search_query(message: Message, state: FSMContext) -> None:
 async def pron_select_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip()
     if not query:
-        await message.answer("⚠️ Qidiruv so‘zi bo‘sh bo‘lmasin 🙂")
+        await message.answer(t("pronunciation.search_empty"))
         return
     await state.update_data(query=query)
     await state.set_state(PronunciationStates.select_search_results)

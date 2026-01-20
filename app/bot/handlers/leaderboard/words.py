@@ -8,6 +8,7 @@ from app.db.repo.leaderboard import get_top_word_count
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
 from app.config import settings
+from app.services.i18n import t
 
 router = Router()
 PAGE_SIZE = 10
@@ -15,11 +16,18 @@ PAGE_SIZE = 10
 
 def _render_list(items: list[dict[str, object]], page: int) -> str:
     if not items:
-        return "📚 So‘zlar TOP\n\nHali reytingda hech kim yo‘q. Birinchi bo‘ling!"
-    lines = ["📚 So‘zlar TOP\n"]
+        return t("leaderboard.list_empty", title=t("leaderboard.words_title"))
+    lines = [t("leaderboard.list_header", title=t("leaderboard.words_title"))]
     start = page * PAGE_SIZE
     for idx, item in enumerate(items, start=1 + start):
-        lines.append(f"{idx}. {item['label']} — {item['value']}")
+        lines.append(
+            t(
+                "leaderboard.list_item",
+                index=idx,
+                label=item["label"],
+                value=item["value"],
+            )
+        )
     return "\n".join(lines)
 
 

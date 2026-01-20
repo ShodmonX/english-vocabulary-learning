@@ -14,6 +14,7 @@ from app.db.repo.stats import (
 )
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
@@ -32,7 +33,7 @@ async def show_stats_message(
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             return
 
         today_stats = await get_today_review_stats(session, user.id)
@@ -48,43 +49,52 @@ async def show_stats_message(
     for item in weekly:
         day_str = item["day"].strftime("%d.%m")
         weekly_lines.append(
-            f"{day_str}: {item['total']} (K:{item['known']} F:{item['forgot']} S:{item['skip']})"
+            t(
+                "stats.weekly_line",
+                day=day_str,
+                total=item["total"],
+                known=item["known"],
+                forgot=item["forgot"],
+                skip=item["skip"],
+            )
         )
 
     quiz_lines = []
     for item in recent_quiz:
         total = (item.correct or 0) + (item.wrong or 0)
         acc = item.accuracy if item.accuracy is not None else 0
-        quiz_lines.append(f"• {total} savol — ✅{item.correct or 0} ❌{item.wrong or 0} | {acc}%")
+        quiz_lines.append(
+            t(
+                "stats.quiz_line",
+                total=total,
+                correct=item.correct or 0,
+                wrong=item.wrong or 0,
+                accuracy=acc,
+            )
+        )
     if not quiz_lines:
-        quiz_lines.append("• Hali quiz natijalari yo‘q")
+        quiz_lines.append(t("stats.quiz_none"))
 
     pron_lines = []
     for item in recent_pron:
-        verdict = item.verdict or "—"
-        word = item.reference_word or "—"
-        pron_lines.append(f"• {word} — {verdict}")
+        verdict = item.verdict or t("common.none")
+        word = item.reference_word or t("common.none")
+        pron_lines.append(t("stats.pron_line", word=word, verdict=verdict))
     if not pron_lines:
-        pron_lines.append("• Hali talaffuz natijalari yo‘q")
+        pron_lines.append(t("stats.pron_none"))
 
-    text = (
-        "📊 Natijalar\n\n"
-        "Bugun:\n"
-        f"✅ Bilganingiz: {today_stats['known']}\n"
-        f"🔁 Qayta ko‘riladiganlar: {today_stats['forgot']}\n"
-        f"⏭ O‘tkazib yuborildi: {today_stats['skip']}\n"
-        f"Jami: {total_today} | Aniqlik: {accuracy:.0f}%\n\n"
-        f"📚 Jami so‘zlar: {total_words}\n"
-        f"⏰ Due so‘zlar: {due_count}\n\n"
-        "🧩 Oxirgi quiz natijalari:\n"
-        + "\n".join(quiz_lines)
-        + "\n\n"
-        "🗣 Oxirgi talaffuz natijalari:\n"
-        + "\n".join(pron_lines)
-        + "\n\n"
-        "🗓 Oxirgi 7 kun:\n"
-        + "\n".join(weekly_lines)
-        + "\n\n💡 Davom eting, natija albatta bo‘ladi!"
+    text = t(
+        "stats.body",
+        known=today_stats["known"],
+        forgot=today_stats["forgot"],
+        skip=today_stats["skip"],
+        total_today=total_today,
+        accuracy=accuracy,
+        total_words=total_words,
+        due_count=due_count,
+        quiz_lines="\n".join(quiz_lines),
+        pron_lines="\n".join(pron_lines),
+        weekly_lines="\n".join(weekly_lines),
     )
     await message.answer(
         text,

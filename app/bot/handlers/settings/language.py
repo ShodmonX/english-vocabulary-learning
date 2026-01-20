@@ -7,17 +7,19 @@ from app.bot.handlers.settings.states import SettingsStates
 from app.db.repo.user_settings import get_or_create_user_settings, update_user_settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
 
 def _language_text(settings) -> str:
-    auto_translation = "ON" if settings.auto_translation_suggest else "OFF"
-    return (
-        "🌍 Til & Tarjima\n"
-        "🌍 Asosiy yo‘nalish: EN → UZ\n"
-        f"🤖 Avto tarjima: {auto_translation}\n"
-        f"🔄 Engine: {settings.translation_engine}"
+    auto_translation = (
+        t("common.status_on") if settings.auto_translation_suggest else t("common.status_off")
+    )
+    return t(
+        "settings.language_body",
+        auto_translation=auto_translation,
+        engine=settings.translation_engine,
     )
 
 
@@ -26,7 +28,7 @@ async def language_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -42,7 +44,7 @@ async def language_toggle_auto(callback: CallbackQuery, state: FSMContext) -> No
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -54,19 +56,19 @@ async def language_toggle_auto(callback: CallbackQuery, state: FSMContext) -> No
     await callback.message.edit_text(
         _language_text(settings), reply_markup=language_kb(settings.auto_translation_suggest)
     )
-    await callback.message.answer("✅ Saqlandi")
+    await callback.message.answer(t("common.saved"))
     await callback.answer()
 
 
 @router.callback_query(F.data == "settings:language:engine")
 async def language_engine(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.answer("ℹ️ Hozirda Google Translate ishlatilmoqda.")
+    await callback.message.answer(t("settings.language_engine_notice"))
     await callback.answer()
 
 
 @router.callback_query(F.data == "settings:language:base_lang")
 async def language_base(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.answer("ℹ️ Hozircha faqat EN → UZ mavjud.")
+    await callback.message.answer(t("settings.language_base_notice"))
     await callback.answer()
 
 
@@ -75,7 +77,7 @@ async def language_reset(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -90,5 +92,5 @@ async def language_reset(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         _language_text(settings), reply_markup=language_kb(settings.auto_translation_suggest)
     )
-    await callback.message.answer("✅ Saqlandi")
+    await callback.message.answer(t("common.saved"))
     await callback.answer()

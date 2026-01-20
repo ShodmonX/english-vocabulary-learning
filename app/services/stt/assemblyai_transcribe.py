@@ -8,13 +8,12 @@ from pathlib import Path
 import httpx
 
 from app.config import settings
+from app.services.i18n import t
 from app.services.stt.base import STTProvider, STTProviderError, TranscriptionResult
 
 logger = logging.getLogger("stt.assemblyai")
 
-_RATE_LIMIT_MESSAGE = (
-    "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
-)
+_RATE_LIMIT_MESSAGE = t("stt.unavailable")
 _TRANSIENT_BACKOFFS = (0.5, 1.5)
 _POLL_INTERVAL_SECONDS = 0.5
 _MAX_POLL_SECONDS = 15.0

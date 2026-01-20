@@ -14,6 +14,7 @@ from app.db.repo.public_profile import (
 )
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
@@ -23,15 +24,14 @@ class LeaderboardSettingsStates(StatesGroup):
 
 
 def _settings_text(profile) -> str:
-    name = profile.public_name or "—"
-    opt = "ON" if profile.leaderboard_opt_in else "OFF"
-    username = "ON" if profile.show_username else "OFF"
-    return (
-        "⚙️ Reyting sozlamalari\n\n"
-        f"Ko‘rinish: {opt}\n"
-        f"Public name: {name}\n"
-        f"Username: {username}\n\n"
-        "Eslatma: opt-in yoqilmasa siz reytingda ko‘rinmaysiz."
+    name = profile.public_name or t("common.none")
+    opt = t("common.status_on") if profile.leaderboard_opt_in else t("common.status_off")
+    username = t("common.status_on") if profile.show_username else t("common.status_off")
+    return t(
+        "leaderboard.settings_body",
+        opt=opt,
+        name=name,
+        username=username,
     )
 
 
@@ -93,7 +93,7 @@ async def leaderboard_alias_prompt(callback: CallbackQuery, state: FSMContext) -
     await _edit_or_send(
         callback.message,
         state,
-        "✍️ Public name yuboring (bo‘sh qoldirish uchun '-' yozing).",
+        t("leaderboard.alias_prompt"),
     )
     await callback.answer()
 
@@ -102,7 +102,7 @@ async def leaderboard_alias_prompt(callback: CallbackQuery, state: FSMContext) -
 async def leaderboard_alias_save(message: Message, state: FSMContext) -> None:
     text = (message.text or "").strip()
     if not text:
-        await message.answer("❗ Iltimos, public name yozing.")
+        await message.answer(t("leaderboard.alias_empty"))
         return
     alias = None if text == "-" else text[:64]
     async with AsyncSessionLocal() as session:

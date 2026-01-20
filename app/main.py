@@ -29,6 +29,7 @@ from app.db.repo.stars_payments import reprocess_paid
 from app.services.log_buffer import ErrorBufferHandler
 from app.services.reminders import ReminderService
 from app.services.db_backup.scheduler import setup_backup_scheduler
+from app.services.i18n import load_locales, t
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logging.basicConfig(level=app_settings.log_level)
@@ -45,17 +46,17 @@ reminder_service = ReminderService(scheduler)
 async def setup_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands(
         [
-            BotCommand(command="start", description="Botni ishga tushirish"),
-            BotCommand(command="help", description="Yordam bo‘limi"),
-            BotCommand(command="leaderboard", description="Reytinglar"),
-            BotCommand(command="profile", description="Profil"),
+            BotCommand(command="start", description=t("commands.start")),
+            BotCommand(command="help", description=t("commands.help")),
+            BotCommand(command="leaderboard", description=t("commands.leaderboard")),
+            BotCommand(command="profile", description=t("commands.profile")),
         ],
         scope=BotCommandScopeDefault(),
     )
     if app_settings.admin_user_ids:
         admin_commands = [
-            BotCommand(command="admin", description="Admin panel"),
-            BotCommand(command="addcredit", description="Kredit qo‘shish"),
+            BotCommand(command="admin", description=t("commands.admin")),
+            BotCommand(command="addcredit", description=t("commands.addcredit")),
         ]
         for admin_id in app_settings.admin_user_ids:
             await bot.set_my_commands(
@@ -100,6 +101,7 @@ def setup_dispatcher() -> Dispatcher:
 
 
 async def on_startup() -> None:
+    load_locales()
     await setup_bot_commands(bot)
     setup_backup_scheduler(scheduler)
     scheduler.start()

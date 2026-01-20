@@ -9,6 +9,7 @@ from app.db.repo.admin import log_admin_action
 from app.db.repo.credits import CreditError, add_topup
 from app.db.repo.users import get_or_create_user, get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
@@ -20,7 +21,7 @@ async def admin_credits_menu(callback: CallbackQuery, state: FSMContext) -> None
     if not await ensure_admin_callback(callback):
         return
     await state.set_state(AdminStates.menu)
-    await callback.message.edit_text("💳 Kreditlar bo‘limi:", reply_markup=admin_credits_menu_kb())
+    await callback.message.edit_text(t("admin_credits.menu"), reply_markup=admin_credits_menu_kb())
     await callback.answer()
 
 
@@ -29,7 +30,7 @@ async def admin_credits_add_id(callback: CallbackQuery, state: FSMContext) -> No
     if not await ensure_admin_callback(callback):
         return
     await state.set_state(AdminStates.credits_add_id)
-    await callback.message.edit_text("🔍 Telegram ID kiriting:")
+    await callback.message.edit_text(t("admin_credits.prompt_id"))
     await callback.answer()
 
 
@@ -39,16 +40,16 @@ async def admin_credits_add_id_value(message: Message, state: FSMContext) -> Non
         return
     telegram_id = parse_int(message.text or "")
     if not telegram_id:
-        await message.answer("❗ Telegram ID raqam bo‘lishi kerak.")
+        await message.answer(t("admin_credits.invalid_id"))
         return
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, telegram_id)
     if not user:
-        await message.answer("🫤 User topilmadi.")
+        await message.answer(t("admin_credits.user_not_found"))
         return
     await state.update_data(credits_target_user_id=user.id, credits_target_telegram_id=telegram_id)
     await state.set_state(AdminStates.credits_add_seconds)
-    await message.answer("Necha sekund qo‘shamiz?")
+    await message.answer(t("admin_credits.prompt_seconds"))
 
 
 @router.message(AdminStates.credits_add_seconds)
@@ -57,16 +58,16 @@ async def admin_credits_add_seconds(message: Message, state: FSMContext) -> None
         return
     seconds = parse_int(message.text or "")
     if not seconds or seconds <= 0:
-        await message.answer("❗ Musbat sekund kiriting.")
+        await message.answer(t("admin_credits.invalid_seconds"))
         return
     if seconds > _MAX_TOPUP_SECONDS:
-        await message.answer("❗ Juda katta qiymat.")
+        await message.answer(t("admin_credits.too_large"))
         return
     data = await state.get_data()
     user_id = data.get("credits_target_user_id")
     telegram_id = data.get("credits_target_telegram_id")
     if not user_id or not telegram_id:
-        await message.answer("⚠️ User tanlanmagan.")
+        await message.answer(t("admin_credits.user_not_selected"))
         return
     async with AsyncSessionLocal() as session:
         try:
@@ -75,11 +76,11 @@ async def admin_credits_add_seconds(message: Message, state: FSMContext) -> None
                 session, message.from_user.id, "credits_add", "user", str(user_id)
             )
         except CreditError as exc:
-            await message.answer(exc.user_message or "⚠️ Kredit qo‘shishda xatolik.")
+            await message.answer(exc.user_message or t("admin_credits.add_error"))
             return
-    await message.answer("✅ Kredit qo‘shildi.")
+    await message.answer(t("admin_credits.added"))
     try:
-        await message.bot.send_message(int(telegram_id), f"Sizga {seconds} sekund kredit qo‘shildi.")
+        await message.bot.send_message(int(telegram_id), t("admin_credits.notify_user", seconds=seconds))
     except Exception:
         pass
     await state.set_state(AdminStates.menu)
@@ -91,7 +92,7 @@ async def admin_credits_forward(callback: CallbackQuery, state: FSMContext) -> N
         return
     await state.set_state(AdminStates.menu)
     await callback.message.edit_text(
-        "📨 User xabarini forward qiling. Agar ID ko‘rinmasa, /addcredit <id> <seconds> yuboring."
+        t("admin_credits.forward_instructions")
     )
     await callback.answer()
 
@@ -110,14 +111,14 @@ async def admin_credits_forward_message(message: Message, state: FSMContext) -> 
         credits_target_telegram_id=forward_user.id,
     )
     await state.set_state(AdminStates.credits_forward_seconds)
-    await message.answer("Necha sekund qo‘shamiz?")
+    await message.answer(t("admin_credits.prompt_seconds"))
 
 
 @router.message(F.forward_sender_name)
 async def admin_credits_forward_missing_id(message: Message) -> None:
     if not await ensure_admin_message(message):
         return
-    await message.answer("Forward orqali ID aniqlanmadi. /addcredit <id> <seconds> deb yuboring.")
+    await message.answer(t("admin_credits.forward_missing"))
 
 
 @router.message(AdminStates.credits_forward_seconds)
@@ -126,16 +127,16 @@ async def admin_credits_forward_seconds(message: Message, state: FSMContext) -> 
         return
     seconds = parse_int(message.text or "")
     if not seconds or seconds <= 0:
-        await message.answer("❗ Musbat sekund kiriting.")
+        await message.answer(t("admin_credits.invalid_seconds"))
         return
     if seconds > _MAX_TOPUP_SECONDS:
-        await message.answer("❗ Juda katta qiymat.")
+        await message.answer(t("admin_credits.too_large"))
         return
     data = await state.get_data()
     user_id = data.get("credits_target_user_id")
     telegram_id = data.get("credits_target_telegram_id")
     if not user_id or not telegram_id:
-        await message.answer("⚠️ User tanlanmagan.")
+        await message.answer(t("admin_credits.user_not_selected"))
         return
     async with AsyncSessionLocal() as session:
         try:
@@ -146,11 +147,11 @@ async def admin_credits_forward_seconds(message: Message, state: FSMContext) -> 
                 session, message.from_user.id, "credits_add", "user", str(user_id)
             )
         except CreditError as exc:
-            await message.answer(exc.user_message or "⚠️ Kredit qo‘shishda xatolik.")
+            await message.answer(exc.user_message or t("admin_credits.add_error"))
             return
-    await message.answer("✅ Kredit qo‘shildi.")
+    await message.answer(t("admin_credits.added"))
     try:
-        await message.bot.send_message(int(telegram_id), f"Sizga {seconds} sekund kredit qo‘shildi.")
+        await message.bot.send_message(int(telegram_id), t("admin_credits.notify_user", seconds=seconds))
     except Exception:
         pass
     await state.set_state(AdminStates.menu)
@@ -162,21 +163,21 @@ async def admin_addcredit_command(message: Message, state: FSMContext) -> None:
         return
     parts = (message.text or "").split()
     if len(parts) < 3:
-        await message.answer("❗ /addcredit <telegram_id> <seconds>")
+        await message.answer(t("admin_credits.command_usage"))
         return
     telegram_id = parse_int(parts[1])
     seconds = parse_int(parts[2])
     reason = " ".join(parts[3:]).strip() if len(parts) > 3 else None
     if not telegram_id or not seconds or seconds <= 0:
-        await message.answer("❗ ID va sekund to‘g‘ri bo‘lishi kerak.")
+        await message.answer(t("admin_credits.invalid_command"))
         return
     if seconds > _MAX_TOPUP_SECONDS:
-        await message.answer("❗ Juda katta qiymat.")
+        await message.answer(t("admin_credits.too_large"))
         return
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, telegram_id)
         if not user:
-            await message.answer("🫤 User topilmadi.")
+            await message.answer(t("admin_credits.user_not_found"))
             return
         try:
             await add_topup(session, user.id, seconds, message.from_user.id, reason=reason or "admin_command")
@@ -184,11 +185,11 @@ async def admin_addcredit_command(message: Message, state: FSMContext) -> None:
                 session, message.from_user.id, "credits_add", "user", str(user.id)
             )
         except CreditError as exc:
-            await message.answer(exc.user_message or "⚠️ Kredit qo‘shishda xatolik.")
+            await message.answer(exc.user_message or t("admin_credits.add_error"))
             return
-    await message.answer("✅ Kredit qo‘shildi.")
+    await message.answer(t("admin_credits.added"))
     try:
-        await message.bot.send_message(int(telegram_id), f"Sizga {seconds} sekund kredit qo‘shildi.")
+        await message.bot.send_message(int(telegram_id), t("admin_credits.notify_user", seconds=seconds))
     except Exception:
         pass
     await state.set_state(AdminStates.menu)

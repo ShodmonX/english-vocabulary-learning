@@ -17,6 +17,7 @@ from app.db.models import User, Word
 from app.db.repo.words import get_words_by_user
 from app.db.session import AsyncSessionLocal
 from app.services.feature_flags import is_feature_enabled
+from app.services.i18n import t
 from app.services.quiz import build_quiz_questions
 
 router = Router()
@@ -27,21 +28,22 @@ class QuizStates(StatesGroup):
 
 
 def _quiz_question_text(translation: str, index: int, total: int) -> str:
-    return (
-        "🧩 Quiz savoli!\n"
-        f"Tarjima: {translation}\n\n"
-        f"Variantni tanlang 👇 ({index}/{total})"
+    return t(
+        "quiz.question",
+        translation=translation,
+        index=index,
+        total=total,
     )
 
 
 def _quiz_result_text(correct: int, wrong: int) -> str:
     total = correct + wrong
     accuracy = (correct / total * 100) if total else 0
-    return (
-        "🎉 Quiz yakunlandi!\n"
-        f"✅ To‘g‘ri: {correct}\n"
-        f"❌ Xato: {wrong}\n"
-        f"📈 Aniqlik: {accuracy:.0f}%"
+    return t(
+        "quiz.result",
+        correct=correct,
+        wrong=wrong,
+        accuracy=accuracy,
     )
 
 
@@ -95,7 +97,7 @@ async def _send_next_question(
                 await finish_quiz_session(session, session_id, total, correct, wrong, accuracy)
         await _edit_or_send(message, state, text, reply_markup=None)
         await message.answer(
-            "Bosh menyu",
+            t("common.main_menu"),
             reply_markup=main_menu_kb(is_admin=is_admin, streak=streak),
         )
         await state.clear()
@@ -123,16 +125,16 @@ async def start_quiz_message(
     await state.clear()
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "quiz"):
-            await message.answer("🛑 Hozircha quiz o‘chirilgan.")
+            await message.answer(t("quiz.disabled"))
             return
         user = await get_user_by_telegram_id(session, user_id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             return
         all_words = await get_words_by_user(session, user.id)
         if len(all_words) < 4:
             await message.answer(
-                "🙂 Quiz uchun kamida 4 ta so‘z kerak. Keling, avval so‘z qo‘shamiz!",
+                t("quiz.need_words"),
                 reply_markup=main_menu_kb(
                     is_admin=message.from_user.id in settings.admin_user_ids,
                     streak=user.current_streak,
@@ -166,7 +168,7 @@ async def quiz_answer(callback: CallbackQuery, state: FSMContext) -> None:
     questions = data.get("questions", [])
     index = data.get("index", 0)
     if index >= len(questions):
-        await callback.answer("🙂 Savollar tugagan.")
+        await callback.answer(t("quiz.questions_over"))
         await state.clear()
         return
 
@@ -180,17 +182,21 @@ async def quiz_answer(callback: CallbackQuery, state: FSMContext) -> None:
             await _edit_or_send(
                 callback.message,
                 state,
-                "⚠️ Karta topilmadi. Qaytadan urinib ko‘ring 🙂",
+                t("quiz.card_not_found"),
             )
             await state.clear()
             return
         if selected_id == correct_id:
             await apply_review(session, word, 4)
-            feedback = "✅ To‘g‘ri! Zo‘r ketayapsiz 💪"
+            feedback = t("quiz.feedback_correct")
             await state.update_data(correct=data.get("correct", 0) + 1)
         else:
             await apply_review(session, word, 0)
-            feedback = f"❌ Xato. To‘g‘ri javob: {question['word']} — {question['translation']}"
+            feedback = t(
+                "quiz.feedback_wrong",
+                word=question["word"],
+                translation=question["translation"],
+            )
             await state.update_data(wrong=data.get("wrong", 0) + 1)
 
     await state.update_data(index=index + 1)
@@ -217,12 +223,12 @@ async def quiz_exit(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
-        if session_id:
-            total = correct + wrong
-            accuracy = int((correct / total) * 100) if total else 0
-            await finish_quiz_session(session, session_id, total, correct, wrong, accuracy)
+    if session_id:
+        total = correct + wrong
+        accuracy = int((correct / total) * 100) if total else 0
+        await finish_quiz_session(session, session_id, total, correct, wrong, accuracy)
     await callback.message.answer(
-        f"🚪 Quiz to‘xtatildi.\n\n{_quiz_result_text(correct, wrong)}",
+        t("quiz.stopped", result=_quiz_result_text(correct, wrong)),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),

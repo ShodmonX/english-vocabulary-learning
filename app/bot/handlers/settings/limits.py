@@ -7,21 +7,22 @@ from app.bot.handlers.settings.states import SettingsStates
 from app.db.repo.user_settings import get_or_create_user_settings, update_user_settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
 
 def _limits_text(settings) -> str:
     limit_text = (
-        "cheksiz"
+        t("settings.limits_unlimited")
         if settings.daily_pronunciation_limit == 0
         else str(settings.daily_pronunciation_limit)
     )
-    status = "ON" if settings.daily_limit_enabled else "OFF"
-    return (
-        "⚡ Cheklovlar\n"
-        f"⚡ Talaffuz limiti: {limit_text}\n"
-        f"🔒 Limitlar: {status}"
+    status = t("common.status_on") if settings.daily_limit_enabled else t("common.status_off")
+    return t(
+        "settings.limits_body",
+        limit=limit_text,
+        status=status,
     )
 
 
@@ -30,7 +31,7 @@ async def limits_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -44,7 +45,7 @@ async def limits_menu(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "settings:limits:pronunciation")
 async def limits_pronunciation(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SettingsStates.limits_pronunciation)
-    await callback.message.answer("⚡ Kunlik talaffuz limitini kiriting (0..100):")
+    await callback.message.answer(t("settings.limits_prompt"))
     await callback.answer()
 
 
@@ -53,16 +54,16 @@ async def save_limits_pronunciation(message: Message, state: FSMContext) -> None
     try:
         value = int(message.text.strip())
     except ValueError:
-        await message.answer("❗ Iltimos, to‘g‘ri qiymat kiriting.")
+        await message.answer(t("common.invalid_value"))
         return
     if value < 0 or value > 100:
-        await message.answer("❗ 0..100 oralig‘ida kiriting.")
+        await message.answer(t("settings.limits_range"))
         return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
-            await message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -71,7 +72,7 @@ async def save_limits_pronunciation(message: Message, state: FSMContext) -> None
         )
 
     await state.set_state(SettingsStates.limits)
-    await message.answer("✅ Saqlandi")
+    await message.answer(t("common.saved"))
     await message.answer(
         _limits_text(settings), reply_markup=limits_kb(settings.daily_limit_enabled)
     )
@@ -79,7 +80,7 @@ async def save_limits_pronunciation(message: Message, state: FSMContext) -> None
 
 @router.callback_query(F.data == "settings:limits:quiz")
 async def limits_quiz_placeholder(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.answer("ℹ️ Quiz limitlari tez orada qo‘shiladi.")
+    await callback.message.answer(t("settings.limits_quiz_soon"))
     await callback.answer()
 
 
@@ -88,7 +89,7 @@ async def limits_toggle(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -100,7 +101,7 @@ async def limits_toggle(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         _limits_text(settings), reply_markup=limits_kb(settings.daily_limit_enabled)
     )
-    await callback.message.answer("✅ Saqlandi")
+    await callback.message.answer(t("common.saved"))
     await callback.answer()
 
 
@@ -109,7 +110,7 @@ async def limits_reset(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
-            await callback.message.answer("⚠️ Avval /start buyrug‘ini bosing 🙂")
+            await callback.message.answer(t("common.start_required"))
             await state.clear()
             return
         settings = await get_or_create_user_settings(session, user)
@@ -123,5 +124,5 @@ async def limits_reset(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         _limits_text(settings), reply_markup=limits_kb(settings.daily_limit_enabled)
     )
-    await callback.message.answer("✅ Saqlandi")
+    await callback.message.answer(t("common.saved"))
     await callback.answer()

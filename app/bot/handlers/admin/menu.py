@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery
 from app.bot.handlers.admin.common import ensure_admin_callback
 from app.bot.handlers.admin.states import AdminStates
 from app.bot.keyboards.admin.main import admin_menu_kb
+from app.services.i18n import t
 
 router = Router()
 
@@ -14,7 +15,7 @@ async def admin_menu(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
     await state.set_state(AdminStates.menu)
-    await callback.message.edit_text("🛠 ADMIN PANEL", reply_markup=admin_menu_kb())
+    await callback.message.edit_text(t("admin.menu_title"), reply_markup=admin_menu_kb())
     await callback.answer()
 
 
@@ -23,5 +24,5 @@ async def admin_exit(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
     await state.clear()
-    await callback.message.edit_text("🚪 Admin paneldan chiqildi.")
+    await callback.message.edit_text(t("admin.exit"))
     await callback.answer()

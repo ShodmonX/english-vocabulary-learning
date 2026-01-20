@@ -39,6 +39,7 @@ from app.services.pronunciation.stt_engine import STTPronunciationEngine
 from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
 from app.services.stt.assemblyai_transcribe import AssemblyAITranscribeSTT
+from app.services.i18n import t
 from app.db.repo.credits import (
     CreditError,
     finalize_charge,
@@ -56,9 +57,7 @@ MAX_VOICE_SECONDS = 15
 MAX_VOICE_BYTES = 3 * 1024 * 1024
 _LOCKS: dict[int, asyncio.Lock] = {}
 logger = logging.getLogger("pronunciation")
-STT_UNAVAILABLE_MESSAGE = (
-    "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
-)
+STT_UNAVAILABLE_MESSAGE = t("stt.unavailable")
 
 
 class PronunciationStates(StatesGroup):
@@ -81,19 +80,19 @@ def _engine() -> PronunciationEngine:
 
 
 def _single_prompt(word: str) -> str:
-    return f"🎯 Ayting: *{word}*\n🎙 Voice yuboring (5–10 soniya)."
+    return t("pronunciation.single_prompt", word=word)
 
 
 def _quiz_prompt(word: str, idx: int, total: int) -> str:
-    return f"🧩 Talaffuz Quiz — Savol {idx}/{total}\n🎯 Ayting: *{word}*\n🎙 Voice yuboring."
+    return t("pronunciation.quiz_prompt", word=word, index=idx, total=total)
 
 
 def _verdict_text(verdict: str) -> str:
     if verdict == "correct":
-        return "✅ To‘g‘ri"
+        return t("pronunciation.verdict_correct")
     if verdict == "close":
-        return "🟨 Yaqin"
-    return "❌ Noto‘g‘ri"
+        return t("pronunciation.verdict_close")
+    return t("pronunciation.verdict_wrong")
 
 
 async def _edit_session_message(
@@ -140,11 +139,11 @@ async def _start_pron_quiz(
     quiz_size: int,
 ) -> None:
     if not words:
-        await _edit_session_message(message, state, "🫤 Quiz uchun so‘z topilmadi. Avval so‘z qo‘shing.")
+        await _edit_session_message(message, state, t("pronunciation.quiz_no_words"))
         return
     questions = _build_pronunciation_questions(words, max_questions=quiz_size)
     if not questions:
-        await _edit_session_message(message, state, "🫤 Quiz uchun so‘z topilmadi. Avval so‘z qo‘shing.")
+        await _edit_session_message(message, state, t("pronunciation.quiz_no_words"))
         return
     total = len(questions)
     await state.set_state(PronunciationStates.quiz_active)
@@ -186,17 +185,25 @@ async def _render_results(callback: CallbackQuery, state: FSMContext, page: int,
             words = await list_recent_words(session, user.id, PAGE_SIZE + 1, page * PAGE_SIZE)
 
     if not words:
-        await callback.message.edit_text("Hech narsa topilmadi 🙂", reply_markup=single_mode_kb())
+        await callback.message.edit_text(t("common.nothing_found"), reply_markup=single_mode_kb())
         await state.set_state(PronunciationStates.single_select_mode)
         return
 
     has_next = len(words) > PAGE_SIZE
     words = words[:PAGE_SIZE]
-    items = [(word.id, f"{word.word} — {word.translation}") for word in words]
+    items = [
+        (word.id, t("common.word_pair", word=word.word, translation=word.translation))
+        for word in words
+    ]
     await state.update_data(context=context, page=page)
-    title = "🔎 Natijalar" if context == "search" else "🕒 Oxirgilar"
+    title = (
+        t("pronunciation.results_search")
+        if context == "search"
+        else t("pronunciation.results_recent")
+    )
     await callback.message.edit_text(
-        f"{title} ({page + 1}):", reply_markup=results_kb(items, page, context, has_next)
+        t("pronunciation.results_page", title=title, page=page + 1),
+        reply_markup=results_kb(items, page, context, has_next),
     )
 
 
@@ -215,7 +222,7 @@ async def _render_select_results(
                 await _edit_session_message(
                     message,
                     state,
-                    "Tanlangan so‘zlar yo‘q 🙂",
+                    t("pronunciation.selected_empty"),
                     reply_markup=select_menu_kb(0),
                 )
                 await state.set_state(PronunciationStates.select_menu)
@@ -235,7 +242,7 @@ async def _render_select_results(
         await _edit_session_message(
             message,
             state,
-            "Hech narsa topilmadi 🙂",
+            t("common.nothing_found"),
             reply_markup=select_menu_kb(len(selected_ids)),
         )
         await state.set_state(PronunciationStates.select_menu)
@@ -243,13 +250,21 @@ async def _render_select_results(
 
     has_next = len(words) > PAGE_SIZE
     words = words[:PAGE_SIZE]
-    items = [(word.id, f"{word.word} — {word.translation}") for word in words]
+    items = [
+        (word.id, t("common.word_pair", word=word.word, translation=word.translation))
+        for word in words
+    ]
     await state.update_data(context=context, page=page)
-    title = "🔎 Natijalar" if context == "search" else "✅ Tanlanganlar" if context == "selected" else "🕒 Oxirgilar"
+    if context == "search":
+        title = t("pronunciation.results_search")
+    elif context == "selected":
+        title = t("pronunciation.results_selected")
+    else:
+        title = t("pronunciation.results_recent")
     await _edit_session_message(
         message,
         state,
-        f"{title} ({page + 1}):",
+        t("pronunciation.results_page", title=title, page=page + 1),
         reply_markup=select_results_kb(items, selected_ids, page, context, has_next, len(selected_ids)),
     )
 
@@ -273,7 +288,7 @@ async def _process_voice(
     if not message.voice:
         return None
     if message.voice.duration and message.voice.duration > MAX_VOICE_SECONDS:
-        text = "⏱ Juda uzun. 5–10 soniya yuboring 🙂"
+        text = t("pronunciation.voice_too_long")
         if retry_prompt:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -286,7 +301,7 @@ async def _process_voice(
     try:
         ogg_path, size = await download_voice(message.bot, message.voice)
         if size > MAX_VOICE_BYTES:
-            text = "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
+            text = t("pronunciation.voice_too_large")
             if retry_prompt:
                 text = f"{text}\n\n{retry_prompt}"
             await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -294,7 +309,7 @@ async def _process_voice(
         try:
             wav_path = await convert_to_wav(ogg_path)
         except RuntimeError:
-            text = "⚠️ Ovozni qayta ishlay olmadim."
+            text = t("pronunciation.voice_process_failed")
             if retry_prompt:
                 text = f"{text}\n\n{retry_prompt}"
             await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -326,7 +341,7 @@ async def _process_voice(
         )
         transcript = _normalize_transcript(result.transcript)
         if not transcript:
-            text = "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
+            text = t("pronunciation.voice_not_understood")
             if retry_prompt:
                 text = f"{text}\n\n{retry_prompt}"
             await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -349,7 +364,7 @@ async def _process_voice(
         return result.verdict, transcript, None
     except CreditError as exc:
         logger.warning("STT_CREDIT_ERROR user=%s error=%s", user_id, str(exc))
-        text = exc.user_message or "⚠️ Kredit tekshirishda xatolik yuz berdi."
+        text = exc.user_message or t("pronunciation.credit_error")
         if retry_prompt and text != STT_UNAVAILABLE_MESSAGE:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -362,7 +377,7 @@ async def _process_voice(
         if reservation_id and exc.user_message == STT_UNAVAILABLE_MESSAGE:
             async with AsyncSessionLocal() as session:
                 await refund_charge(session, reservation_id, reason="stt_unavailable")
-        text = exc.user_message or "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        text = exc.user_message or t("pronunciation.check_failed")
         if retry_prompt and text != STT_UNAVAILABLE_MESSAGE:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -375,7 +390,7 @@ async def _process_voice(
         if reservation_id:
             async with AsyncSessionLocal() as session:
                 await refund_charge(session, reservation_id, reason="stt_error")
-        text = "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
+        text = t("pronunciation.check_failed")
         if retry_prompt:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -387,7 +402,7 @@ async def _process_voice(
 
 async def open_pronunciation_menu(message: Message, state: FSMContext) -> None:
     if not settings.pronunciation_enabled:
-        await message.answer("🫤 Talaffuz hozircha o‘chirib qo‘yilgan.")
+        await message.answer(t("pronunciation.disabled_global"))
         return
     await state.clear()
     user_id = await _require_user(message)
@@ -395,29 +410,29 @@ async def open_pronunciation_menu(message: Message, state: FSMContext) -> None:
         return
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "pronunciation"):
-            await message.answer("🛑 Hozircha talaffuz o‘chirilgan.")
+            await message.answer(t("pronunciation.disabled_feature"))
             return
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, user_id)
         user_settings = await get_or_create_user_settings(session, user)
     if not user_settings.pronunciation_enabled:
-        await message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+        await message.answer(t("pronunciation.disabled_user"))
         return
     await state.set_state(PronunciationStates.menu)
-    await message.answer("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+    await message.answer(t("pronunciation.menu_prompt"), reply_markup=pronunciation_menu_kb())
 
 
 @router.callback_query(F.data == "pron:menu")
 async def pron_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PronunciationStates.menu)
-    await callback.message.edit_text("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+    await callback.message.edit_text(t("pronunciation.menu_prompt"), reply_markup=pronunciation_menu_kb())
     await callback.answer()
 
 
 @router.callback_query(F.data == "pron:menu:back")
 async def pron_menu_back(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PronunciationStates.menu)
-    await callback.message.edit_text("🗣 Talaffuz rejimini tanlang:", reply_markup=pronunciation_menu_kb())
+    await callback.message.edit_text(t("pronunciation.menu_prompt"), reply_markup=pronunciation_menu_kb())
     await callback.answer()
 
 
@@ -425,21 +440,21 @@ async def pron_menu_back(callback: CallbackQuery, state: FSMContext) -> None:
 async def pron_single_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "pronunciation"):
-            await callback.message.answer("🛑 Hozircha talaffuz o‘chirilgan.")
+            await callback.message.answer(t("pronunciation.disabled_feature"))
             await callback.answer()
             return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
     if not user_settings.pronunciation_enabled:
-        await callback.message.answer("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+        await callback.message.answer(t("pronunciation.disabled_user"))
         await callback.answer()
         return
     if user_settings.pronunciation_mode not in {"single", "both"}:
-        await callback.message.answer("ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan.")
+        await callback.message.answer(t("pronunciation.mode_only_quiz"))
         await callback.answer()
         return
     await state.set_state(PronunciationStates.single_select_mode)
-    await callback.message.edit_text("🎯 Bitta so‘z tekshirish", reply_markup=single_mode_kb())
+    await callback.message.edit_text(t("pronunciation.single_title"), reply_markup=single_mode_kb())
     await callback.answer()
 
 
@@ -453,7 +468,7 @@ async def pron_single_recent(callback: CallbackQuery, state: FSMContext) -> None
 @router.callback_query(F.data == "pron:single:search")
 async def pron_single_search(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PronunciationStates.search_query)
-    await callback.message.edit_text("🔎 Qidirish uchun so‘z yozing (masalan: abandon)")
+    await callback.message.edit_text(t("pronunciation.search_prompt"))
     await callback.answer()
 
 
@@ -484,7 +499,7 @@ async def pron_pick_word(callback: CallbackQuery, state: FSMContext) -> None:
         word = await get_word(session, user.id, word_id_int)
 
     if not word:
-        await callback.message.edit_text("So‘z topilmadi 🙂", reply_markup=single_mode_kb())
+        await callback.message.edit_text(t("pronunciation.word_not_found"), reply_markup=single_mode_kb())
         await state.clear()
         await callback.answer()
         return
@@ -520,12 +535,12 @@ async def pron_back(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "pron:exit")
 async def pron_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("🏁 Menyuga qaytdik", reply_markup=None)
+    await callback.message.edit_text(t("pronunciation.back_to_menu"), reply_markup=None)
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
     await callback.message.answer(
-        "Bosh menyu",
+        t("common.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),
@@ -551,9 +566,9 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
     context = data.get("context", "recent")
     page = int(data.get("page", 0))
     if not reference:
-        await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta tanlang 🙂")
+        await _edit_session_message(message, state, t("pronunciation.word_not_found_retry"))
         return
-    await _edit_session_message(message, state, "⏳ Tekshiryapman…")
+    await _edit_session_message(message, state, t("pronunciation.checking"))
     result = await _process_voice(
         message,
         state,
@@ -578,14 +593,18 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
         await _edit_session_message(
             message,
             state,
-            f"{_verdict_text(verdict)}\n📝 Men eshitganim: {transcript}",
+            t(
+                "pronunciation.single_result",
+                verdict=_verdict_text(verdict),
+                transcript=transcript,
+            ),
             reply_markup=single_result_kb(context, page),
         )
     else:
         await _edit_session_message(
             message,
             state,
-            f"{_verdict_text(verdict)}\n⚠️ Natija xavfsizlik sababli ko‘rsatilmadi.",
+            t("pronunciation.single_result_hidden", verdict=_verdict_text(verdict)),
             reply_markup=single_result_kb(context, page),
         )
 
@@ -595,17 +614,17 @@ async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "pronunciation"):
-            await callback.message.edit_text("🛑 Hozircha talaffuz o‘chirilgan.")
+            await callback.message.edit_text(t("pronunciation.disabled_feature"))
             await callback.answer()
             return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
         if not user_settings.pronunciation_enabled:
-            await callback.message.edit_text("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+            await callback.message.edit_text(t("pronunciation.disabled_user"))
             await callback.answer()
             return
         if user_settings.pronunciation_mode not in {"quiz", "both"}:
-            await callback.message.edit_text("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
+            await callback.message.edit_text(t("pronunciation.mode_only_single"))
             await callback.answer()
             return
         recent_words = await list_recent_words(
@@ -619,22 +638,22 @@ async def pron_quiz_start(callback: CallbackQuery, state: FSMContext) -> None:
 async def pron_select_menu(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "pronunciation"):
-            await callback.message.edit_text("🛑 Hozircha talaffuz o‘chirilgan.")
+            await callback.message.edit_text(t("pronunciation.disabled_feature"))
             await callback.answer()
             return
         user = await get_or_create_user(session, callback.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
     if not user_settings.pronunciation_enabled:
-        await callback.message.edit_text("🫤 Talaffuz sozlamalarda o‘chirilgan.")
+        await callback.message.edit_text(t("pronunciation.disabled_user"))
         await callback.answer()
         return
     if user_settings.pronunciation_mode not in {"quiz", "both"}:
-        await callback.message.edit_text("ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan.")
+        await callback.message.edit_text(t("pronunciation.mode_only_single"))
         await callback.answer()
         return
     await state.set_state(PronunciationStates.select_menu)
     await state.update_data(selected_ids=[], pron_message_id=callback.message.message_id)
-    await callback.message.edit_text("🎯 Tanlab talaffuz quiz", reply_markup=select_menu_kb(0))
+    await callback.message.edit_text(t("pronunciation.select_quiz_title"), reply_markup=select_menu_kb(0))
     await callback.answer()
 
 
@@ -644,7 +663,8 @@ async def pron_select_menu_back(callback: CallbackQuery, state: FSMContext) -> N
     selected = data.get("selected_ids", [])
     await state.set_state(PronunciationStates.select_menu)
     await callback.message.edit_text(
-        "🎯 Tanlab talaffuz quiz", reply_markup=select_menu_kb(len(selected))
+        t("pronunciation.select_quiz_title"),
+        reply_markup=select_menu_kb(len(selected)),
     )
     await callback.answer()
 
@@ -659,7 +679,7 @@ async def pron_select_recent(callback: CallbackQuery, state: FSMContext) -> None
 @router.callback_query(F.data == "pron:select:search")
 async def pron_select_search(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PronunciationStates.select_search_query)
-    await callback.message.edit_text("🔎 Qidirish uchun so‘z yozing (masalan: abandon)")
+    await callback.message.edit_text(t("pronunciation.search_prompt"))
     await callback.answer()
 
 
@@ -705,7 +725,7 @@ async def pron_select_start(callback: CallbackQuery, state: FSMContext) -> None:
     selected_ids = data.get("selected_ids", [])
     if len(selected_ids) < 3:
         await callback.message.edit_text(
-            "⚠️ Quiz uchun kamida 3 ta so‘z tanlang.",
+            t("pronunciation.select_min_words"),
             reply_markup=select_menu_kb(len(selected_ids)),
         )
         await callback.answer()
@@ -731,9 +751,9 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         return
     reference = data.get("reference")
     if not reference:
-        await _edit_session_message(message, state, "⚠️ So‘z topilmadi. Qayta urinib ko‘ring 🙂")
+        await _edit_session_message(message, state, t("pronunciation.word_not_found_retry_quiz"))
         return
-    await _edit_session_message(message, state, "⏳ Baholayapman…")
+    await _edit_session_message(message, state, t("pronunciation.scoring"))
     retry_prompt = _quiz_prompt(reference, idx + 1, len(questions))
     result = await _process_voice(
         message,
@@ -772,14 +792,16 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
     next_idx = idx + 1
     total = len(questions)
     transcript_line = (
-        f"📝 Men eshitganim: {transcript}"
+        t("pronunciation.heard", transcript=transcript)
         if transcript
-        else "⚠️ Natija xavfsizlik sababli ko‘rsatilmadi."
+        else t("pronunciation.hidden_result")
     )
-    feedback = (
-        f"Natija: {_verdict_text(verdict)}\n"
-        f"{transcript_line}\n"
-        f"⭐ Ball: +{2 if verdict == 'correct' else 1 if verdict == 'close' else 0} | Jami: {score}"
+    feedback = t(
+        "pronunciation.quiz_feedback",
+        verdict=_verdict_text(verdict),
+        transcript_line=transcript_line,
+        delta=2 if verdict == "correct" else 1 if verdict == "close" else 0,
+        score=score,
     )
 
     if next_idx >= total:
@@ -787,13 +809,14 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         await _edit_session_message(
             message,
             state,
-            "🏁 Quiz yakunlandi!\n"
-            f"✅ To‘g‘ri: {correct}\n"
-            f"🟨 Yaqin: {close}\n"
-            f"❌ Noto‘g‘ri: {wrong}\n"
-            f"⭐ Jami ball: {score}\n"
-            f"📈 Aniqlik: {accuracy:.0f}%\n\n"
-            "Ajoyib ish! Davom eting! 💪",
+            t(
+                "pronunciation.quiz_done",
+                correct=correct,
+                close=close,
+                wrong=wrong,
+                score=score,
+                accuracy=accuracy,
+            ),
             reply_markup=quiz_done_kb(),
         )
         await state.clear()
@@ -821,12 +844,12 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "pron:quiz:stop")
 async def pron_quiz_stop(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("🛑 Quiz to‘xtatildi")
+    await callback.message.edit_text(t("pronunciation.quiz_stopped"))
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
     await callback.message.answer(
-        "Bosh menyu",
+        t("common.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),
@@ -852,18 +875,18 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
         user = await get_or_create_user(session, message.from_user.id)
         user_settings = await get_or_create_user_settings(session, user)
         if not user_settings.pronunciation_enabled:
-            await _edit_session_message(message, state, "🫤 Talaffuz sozlamalarda o‘chirilgan.")
+            await _edit_session_message(message, state, t("pronunciation.disabled_user"))
             await state.clear()
             return
         if current == PronunciationStates.waiting_voice_single.state and user_settings.pronunciation_mode == "quiz":
             await _edit_session_message(
-                message, state, "ℹ️ Talaffuz rejimi faqat quiz uchun yoqilgan."
+                message, state, t("pronunciation.mode_only_quiz")
             )
             await state.clear()
             return
         if current == PronunciationStates.quiz_active.state and user_settings.pronunciation_mode == "single":
             await _edit_session_message(
-                message, state, "ℹ️ Talaffuz rejimi faqat bitta so‘z uchun yoqilgan."
+                message, state, t("pronunciation.mode_only_single")
             )
             await state.clear()
             return
@@ -882,7 +905,7 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
                     credit_snapshot["topup_remaining_seconds"],
                 )
                 await _edit_session_message(
-                    message, state, "⚠️ Bugungi talaffuz limitiga yetdingiz 🙂"
+                    message, state, t("pronunciation.daily_limit_reached")
                 )
                 return
 
@@ -890,7 +913,7 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
     if data.get("stt_processing"):
         logger.info("STT_SKIP user=%s reason=processing", message.from_user.id)
         await _edit_session_message(
-            message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
+            message, state, t("pronunciation.processing_wait")
         )
         return
 
@@ -898,7 +921,7 @@ async def pron_voice_handler(message: Message, state: FSMContext) -> None:
     if lock.locked():
         logger.info("STT_SKIP user=%s reason=lock", message.from_user.id)
         await _edit_session_message(
-            message, state, "⏳ Oldingi tekshiruv tugamadi. Iltimos, biroz kuting 🙂"
+            message, state, t("pronunciation.processing_wait")
         )
         return
 

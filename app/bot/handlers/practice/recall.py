@@ -12,17 +12,28 @@ from app.bot.handlers.practice.common import (
 )
 from app.bot.handlers.practice.states import PracticeStates
 from app.bot.handlers.practice.summary import show_summary
+from app.services.i18n import t
 
 router = Router()
 
 
 def _recall_prompt_text(word: str) -> str:
-    return f"🧠 Tarjimasini yozing:\n👉 *{word}*"
+    return t("practice.recall_prompt", word=word)
 
 
 def _recall_result_text(word: str, translation: str, answer: str, is_close: bool) -> str:
-    verdict = "✅ Yaqin/To‘g‘ri" if is_close else "❌ Noto‘g‘ri"
-    return f"{verdict}\n🟩 *{word}*\n➜ {translation}\n🧩 Siz: {answer}"
+    verdict = (
+        t("practice.recall_verdict_close")
+        if is_close
+        else t("practice.recall_verdict_wrong")
+    )
+    return t(
+        "practice.recall_result",
+        verdict=verdict,
+        word=word,
+        translation=translation,
+        answer=answer,
+    )
 
 
 async def _advance(message: Message, state: FSMContext) -> None:
@@ -51,11 +62,11 @@ async def _advance(message: Message, state: FSMContext) -> None:
 @router.message(PracticeStates.recall_await_answer)
 async def recall_answer(message: Message, state: FSMContext) -> None:
     if not message.text:
-        await message.answer("❗ Iltimos, javobni yozing.")
+        await message.answer(t("common.answer_required"))
         return
     answer = message.text.strip()
     if not answer:
-        await message.answer("❗ Iltimos, javobni yozing.")
+        await message.answer(t("common.answer_required"))
         return
     data = await state.get_data()
     idx = data.get("idx", 0)

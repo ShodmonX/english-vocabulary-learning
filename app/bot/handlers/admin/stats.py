@@ -6,6 +6,7 @@ from app.bot.handlers.admin.common import ensure_admin_callback
 from app.bot.keyboards.admin.main import admin_back_kb
 from app.db.repo.admin import get_admin_stats
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
@@ -16,14 +17,14 @@ async def admin_stats(callback: CallbackQuery, state: FSMContext) -> None:
         return
     async with AsyncSessionLocal() as session:
         stats = await get_admin_stats(session)
-    text = (
-        "📊 Umumiy statistika:\n"
-        f"👥 Jami userlar: {stats['total_users']}\n"
-        f"📘 Jami so‘zlar: {stats['total_words']}\n"
-        f"🧠 Bugun due: {stats['due_words']}\n"
-        f"🧩 Bugungi quiz sessiyalar: {stats['quiz_sessions_today']}\n"
-        f"🗣 Bugungi talaffuz testlar: {stats['pronunciation_today']}\n"
-        f"⏱ Oxirgi 24 soat activity: {stats['activity_24h']}"
+    text = t(
+        "admin_stats.body",
+        total_users=stats["total_users"],
+        total_words=stats["total_words"],
+        due_words=stats["due_words"],
+        quiz_today=stats["quiz_sessions_today"],
+        pron_today=stats["pronunciation_today"],
+        activity_24h=stats["activity_24h"],
     )
     await callback.message.edit_text(text, reply_markup=admin_back_kb())
     await callback.answer()

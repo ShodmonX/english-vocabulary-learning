@@ -12,6 +12,7 @@ from app.bot.keyboards.admin.db_management import (
 from app.config import settings
 from app.db.repo.admin import log_admin_action
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 from app.services.db_backup.engine import (
     cleanup_auto_backups,
     create_backup,
@@ -43,7 +44,7 @@ async def _slice_backups(page: int, kind: str) -> tuple[list[str], list[str], bo
 async def admin_db_menu(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
-    await callback.message.edit_text("🗄 Database Management", reply_markup=admin_db_menu_kb())
+    await callback.message.edit_text(t("admin_db.menu_title"), reply_markup=admin_db_menu_kb())
     await callback.answer()
 
 
@@ -52,9 +53,9 @@ async def admin_db_backup(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
     if is_backup_locked():
-        await callback.answer("⏳ Backup jarayoni davom etyapti.", show_alert=True)
+        await callback.answer(t("admin_db.backup_locked"), show_alert=True)
         return
-    await callback.message.edit_text("⏳ Backup yaratilmoqda...")
+    await callback.message.edit_text(t("admin_db.backup_creating"))
     try:
         info = await create_backup("manual")
     except Exception as exc:
@@ -62,15 +63,17 @@ async def admin_db_backup(callback: CallbackQuery, state: FSMContext) -> None:
             await log_admin_action(
                 session, callback.from_user.id, "backup/manual/fail", "backup", _truncate(str(exc))
             )
-        await callback.message.edit_text(f"⚠️ Backup xatosi: {exc}")
+        await callback.message.edit_text(t("admin_db.backup_error", error=str(exc)))
         await callback.answer()
         return
     async with AsyncSessionLocal() as session:
         await log_admin_action(session, callback.from_user.id, "backup/manual/success", "backup", info.filename)
     await callback.message.edit_text(
-        "✅ Backup yaratildi\n"
-        f"📄 {info.filename}\n"
-        f"📦 Size: {info.size_bytes / 1024 / 1024:.2f} MB",
+        t(
+            "admin_db.backup_created",
+            filename=info.filename,
+            size_mb=f"{info.size_bytes / 1024 / 1024:.2f}",
+        ),
         reply_markup=admin_db_menu_kb(),
     )
     await callback.answer()
@@ -85,10 +88,10 @@ async def admin_db_list(callback: CallbackQuery, state: FSMContext) -> None:
     page = int(parts[-1])
     names, lines, has_next = await _slice_backups(page, kind)
     if not lines:
-        await callback.message.edit_text("Hozircha backup yo‘q 🙂", reply_markup=admin_db_menu_kb())
+        await callback.message.edit_text(t("admin_db.none"), reply_markup=admin_db_menu_kb())
         await callback.answer()
         return
-    text = "📂 Backup list (newest):\n" + "\n".join(lines)
+    text = t("admin_db.list_title") + "\n" + "\n".join(lines)
     await callback.message.edit_text(
         text,
         reply_markup=admin_db_list_kb("list", page, has_next, items=names, kind=kind),
@@ -105,10 +108,10 @@ async def admin_db_restore_list(callback: CallbackQuery, state: FSMContext) -> N
     page = int(parts[-1])
     names, lines, has_next = await _slice_backups(page, kind)
     if not lines:
-        await callback.message.edit_text("Hozircha backup yo‘q 🙂", reply_markup=admin_db_menu_kb())
+        await callback.message.edit_text(t("admin_db.none"), reply_markup=admin_db_menu_kb())
         await callback.answer()
         return
-    text = "♻️ Restore uchun backup tanlang:\n" + "\n".join(lines)
+    text = t("admin_db.restore_pick") + "\n" + "\n".join(lines)
     await callback.message.edit_text(
         text,
         reply_markup=admin_db_list_kb("restore", page, has_next, items=names, kind=kind),
@@ -125,10 +128,10 @@ async def admin_db_delete_list(callback: CallbackQuery, state: FSMContext) -> No
     page = int(parts[-1])
     names, lines, has_next = await _slice_backups(page, kind)
     if not lines:
-        await callback.message.edit_text("Hozircha backup yo‘q 🙂", reply_markup=admin_db_menu_kb())
+        await callback.message.edit_text(t("admin_db.none"), reply_markup=admin_db_menu_kb())
         await callback.answer()
         return
-    text = "🧹 O‘chirish uchun backup tanlang:\n" + "\n".join(lines)
+    text = t("admin_db.delete_pick") + "\n" + "\n".join(lines)
     await callback.message.edit_text(
         text,
         reply_markup=admin_db_list_kb("delete", page, has_next, items=names, kind=kind),
@@ -146,10 +149,10 @@ async def admin_db_info(callback: CallbackQuery, state: FSMContext) -> None:
     backups = await list_backups()
     info = next((b for b in backups if b.filename == filename), None)
     if not info:
-        await callback.answer("⚠️ Backup topilmadi.", show_alert=True)
+        await callback.answer(t("admin_db.not_found"), show_alert=True)
         return
     await callback.message.edit_text(
-        "ℹ️ Backup info:\n" + format_backup_line(info),
+        t("admin_db.info_title") + "\n" + format_backup_line(info),
         reply_markup=admin_db_list_kb("list", 0, False, filename=filename, kind=kind),
     )
     await callback.answer()
@@ -161,7 +164,7 @@ async def admin_db_restore_pick(callback: CallbackQuery, state: FSMContext) -> N
         return
     filename = callback.data.split(":")[-1]
     await callback.message.edit_text(
-        "⚠️ Bu amal hozirgi DB ni ALMASHTIRADI.\nDavom etasizmi?",
+        t("admin_db.restore_confirm"),
         reply_markup=admin_db_confirm_kb("restore", filename),
     )
     await callback.answer()
@@ -173,7 +176,7 @@ async def admin_db_delete_pick(callback: CallbackQuery, state: FSMContext) -> No
         return
     filename = callback.data.split(":")[-1]
     await callback.message.edit_text(
-        "⚠️ Backupni o‘chirmoqchimisiz?",
+        t("admin_db.delete_confirm"),
         reply_markup=admin_db_confirm_kb("delete", filename),
     )
     await callback.answer()
@@ -185,7 +188,7 @@ async def admin_db_restore_confirm(callback: CallbackQuery, state: FSMContext) -
         return
     filename = callback.data.split(":")[-1]
     await callback.message.edit_text(
-        "⚠️ Bu amal hozirgi DB ni ALMASHTIRADI.\nDavom etasizmi?",
+        t("admin_db.restore_confirm"),
         reply_markup=admin_db_confirm_kb("restore", filename),
     )
     await callback.answer()
@@ -197,7 +200,7 @@ async def admin_db_delete_confirm(callback: CallbackQuery, state: FSMContext) ->
         return
     filename = callback.data.split(":")[-1]
     await callback.message.edit_text(
-        "⚠️ Backupni o‘chirmoqchimisiz?",
+        t("admin_db.delete_confirm"),
         reply_markup=admin_db_confirm_kb("delete", filename),
     )
     await callback.answer()
@@ -209,9 +212,9 @@ async def admin_db_restore_run(callback: CallbackQuery, state: FSMContext) -> No
         return
     filename = callback.data.split(":")[-1]
     if is_backup_locked():
-        await callback.answer("⏳ Backup/restore jarayoni davom etyapti.", show_alert=True)
+        await callback.answer(t("admin_db.restore_locked"), show_alert=True)
         return
-    await callback.message.edit_text("🛠 Maintenance mode yoqildi. Restore boshlanmoqda...")
+    await callback.message.edit_text(t("admin_db.restore_start"))
     try:
         await restore_from_backup(filename)
     except Exception as exc:
@@ -219,13 +222,13 @@ async def admin_db_restore_run(callback: CallbackQuery, state: FSMContext) -> No
             await log_admin_action(
                 session, callback.from_user.id, "backup/restore/fail", "backup", _truncate(str(exc))
             )
-        await callback.message.edit_text(f"⚠️ Restore xatosi: {exc}")
+        await callback.message.edit_text(t("admin_db.restore_error", error=str(exc)))
         await callback.answer()
         return
     async with AsyncSessionLocal() as session:
         await log_admin_action(session, callback.from_user.id, "backup/restore/success", "backup", filename)
     await callback.message.edit_text(
-        "✅ DB muvaffaqiyatli tiklandi", reply_markup=admin_db_menu_kb()
+        t("admin_db.restore_success"), reply_markup=admin_db_menu_kb()
     )
     await callback.answer()
 
@@ -236,7 +239,7 @@ async def admin_db_delete_run(callback: CallbackQuery, state: FSMContext) -> Non
         return
     filename = callback.data.split(":")[-1]
     if is_backup_locked():
-        await callback.answer("⏳ Backup/restore jarayoni davom etyapti.", show_alert=True)
+        await callback.answer(t("admin_db.restore_locked"), show_alert=True)
         return
     try:
         await delete_backup(filename)
@@ -245,12 +248,12 @@ async def admin_db_delete_run(callback: CallbackQuery, state: FSMContext) -> Non
             await log_admin_action(
                 session, callback.from_user.id, "backup/delete/fail", "backup", _truncate(str(exc))
             )
-        await callback.message.edit_text(f"⚠️ O‘chirish xatosi: {exc}")
+        await callback.message.edit_text(t("admin_db.delete_error", error=str(exc)))
         await callback.answer()
         return
     async with AsyncSessionLocal() as session:
         await log_admin_action(session, callback.from_user.id, "backup/delete/success", "backup", filename)
-    await callback.message.edit_text("✅ Backup o‘chirildi", reply_markup=admin_db_menu_kb())
+    await callback.message.edit_text(t("admin_db.delete_success"), reply_markup=admin_db_menu_kb())
     await callback.answer()
 
 
@@ -258,13 +261,13 @@ async def admin_db_delete_run(callback: CallbackQuery, state: FSMContext) -> Non
 async def admin_db_auto_status(callback: CallbackQuery, state: FSMContext) -> None:
     if not await ensure_admin_callback(callback):
         return
-    text = (
-        "🕒 Auto backup status:\n"
-        f"Enabled: {settings.auto_backup_enabled}\n"
-        f"Schedule: {settings.auto_backup_schedule} {settings.auto_backup_hour:02d}:{settings.auto_backup_minute:02d}\n"
-        f"Retention (daily): {settings.auto_backup_retention_days} days\n"
-        f"Prefix: {settings.auto_backup_prefix}\n"
-        f"Dir: {settings.backup_dir}"
+    text = t(
+        "admin_db.auto_status",
+        enabled=settings.auto_backup_enabled,
+        schedule=f"{settings.auto_backup_schedule} {settings.auto_backup_hour:02d}:{settings.auto_backup_minute:02d}",
+        retention=settings.auto_backup_retention_days,
+        prefix=settings.auto_backup_prefix,
+        directory=settings.backup_dir,
     )
     await callback.message.edit_text(text, reply_markup=admin_db_menu_kb())
     await callback.answer()
@@ -275,7 +278,7 @@ async def admin_db_cleanup_auto(callback: CallbackQuery, state: FSMContext) -> N
     if not await ensure_admin_callback(callback):
         return
     await callback.message.edit_text(
-        "⚠️ Auto backup’larni retention bo‘yicha tozalaysizmi?",
+        t("admin_db.cleanup_confirm"),
         reply_markup=admin_db_cleanup_confirm_kb(),
     )
     await callback.answer()
@@ -286,7 +289,7 @@ async def admin_db_cleanup_run(callback: CallbackQuery, state: FSMContext) -> No
     if not await ensure_admin_callback(callback):
         return
     if is_backup_locked():
-        await callback.answer("⏳ Backup/restore jarayoni davom etyapti.", show_alert=True)
+        await callback.answer(t("admin_db.restore_locked"), show_alert=True)
         return
     try:
         deleted = await cleanup_auto_backups(settings.auto_backup_retention_days)
@@ -295,7 +298,7 @@ async def admin_db_cleanup_run(callback: CallbackQuery, state: FSMContext) -> No
             await log_admin_action(
                 session, callback.from_user.id, "backup/cleanup/fail", "backup", _truncate(str(exc))
             )
-        await callback.message.edit_text(f"⚠️ Cleanup xatosi: {exc}")
+        await callback.message.edit_text(t("admin_db.cleanup_error", error=str(exc)))
         await callback.answer()
         return
     async with AsyncSessionLocal() as session:
@@ -303,7 +306,7 @@ async def admin_db_cleanup_run(callback: CallbackQuery, state: FSMContext) -> No
             session, callback.from_user.id, "backup/cleanup/success", "backup", str(deleted)
         )
     await callback.message.edit_text(
-        f"🧹 Cleanup tugadi. O‘chirildi: {deleted} ta.", reply_markup=admin_db_menu_kb()
+        t("admin_db.cleanup_done", count=deleted), reply_markup=admin_db_menu_kb()
     )
     await callback.answer()
 

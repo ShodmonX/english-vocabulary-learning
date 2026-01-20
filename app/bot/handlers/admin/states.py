@@ -13,5 +13,6 @@ class AdminStates(StatesGroup):
     credits_forward_seconds = State()
     package_select = State()
     package_edit = State()
+    package_seconds = State()
     package_manual_price = State()
     package_stars_price = State()

@@ -1,33 +1,43 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.services.i18n import b
+
 
 def admin_packages_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✏️ BASIC", callback_data="admin:packages:edit:BASIC"),
-                InlineKeyboardButton(text="✏️ STANDARD", callback_data="admin:packages:edit:STANDARD"),
-                InlineKeyboardButton(text="✏️ PRO", callback_data="admin:packages:edit:PRO"),
+                InlineKeyboardButton(text=b("admin_packages.edit_basic"), callback_data="admin:packages:edit:BASIC"),
+                InlineKeyboardButton(text=b("admin_packages.edit_standard"), callback_data="admin:packages:edit:STANDARD"),
+                InlineKeyboardButton(text=b("admin_packages.edit_pro"), callback_data="admin:packages:edit:PRO"),
             ],
-            [InlineKeyboardButton(text="◀️ Orqaga", callback_data="admin:menu")],
+            [InlineKeyboardButton(text=b("common.back"), callback_data="admin:menu")],
         ]
     )
 
 
 def admin_package_edit_kb(package_key: str, is_active: bool) -> InlineKeyboardMarkup:
-    toggle_label = "⛔️ O‘chirish" if is_active else "✅ Aktiv qilish"
+    toggle_label = (
+        b("admin_packages.deactivate") if is_active else b("admin_packages.activate")
+    )
     toggle_value = "off" if is_active else "on"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="💰 Manual narx (UZS) o‘zgartirish",
+                    text=b("admin_packages.edit_seconds"),
+                    callback_data=f"admin:packages:seconds:{package_key}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=b("admin_packages.edit_manual"),
                     callback_data=f"admin:packages:manual:{package_key}",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="⭐ Stars narx o‘zgartirish",
+                    text=b("admin_packages.edit_stars"),
                     callback_data=f"admin:packages:stars:{package_key}",
                 )
             ],
@@ -37,6 +47,6 @@ def admin_package_edit_kb(package_key: str, is_active: bool) -> InlineKeyboardMa
                     callback_data=f"admin:packages:toggle:{package_key}:{toggle_value}",
                 )
             ],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin:packages")],
+            [InlineKeyboardButton(text=b("common.back"), callback_data="admin:packages")],
         ]
     )

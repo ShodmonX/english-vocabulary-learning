@@ -18,6 +18,7 @@ from app.bot.handlers.practice.summary import show_summary
 from app.db.session import AsyncSessionLocal
 from app.db.repo.users import get_or_create_user
 from app.services.feature_flags import is_feature_enabled
+from app.services.i18n import b, t
 
 router = Router()
 
@@ -25,7 +26,7 @@ router = Router()
 async def _start_mode(message: Message, state: FSMContext, mode: str, user_id: int) -> None:
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "practice"):
-            await message.answer("🛑 Hozircha mashq o‘chirilgan.")
+            await message.answer(t("practice.disabled"))
             await state.clear()
             return
     _, limit = await ensure_session(user_id)
@@ -36,7 +37,7 @@ async def _start_mode(message: Message, state: FSMContext, mode: str, user_id: i
         await edit_or_send(
             message,
             state,
-            "🎉 Bugun barcha due so‘zlar tugadi!\nYangi so‘zlarni mashq qilamizmi?",
+            t("practice.due_done"),
             reply_markup=practice_due_empty_kb(),
         )
         return
@@ -49,7 +50,7 @@ async def _start_mode(message: Message, state: FSMContext, mode: str, user_id: i
         stats=init_stats(),
     )
     await update_current_review(user_id, items[0].id)
-    start_line = f"🚀 Mashq boshlandi!\nBugun {len(items)} ta due so‘z."
+    start_line = t("practice.start_due", count=len(items))
     if mode == "quick":
         await state.set_state(PracticeStates.quick_word)
         await edit_or_send(
@@ -69,11 +70,11 @@ async def _start_mode(message: Message, state: FSMContext, mode: str, user_id: i
 
 
 def _quick_word_text(idx: int, total: int, word: str) -> str:
-    return f"🟦 {idx}/{total}\n👉 *{word}*"
+    return t("practice.quick_word", index=idx, total=total, word=word)
 
 
 def _recall_prompt_text(word: str) -> str:
-    return f"🧠 Tarjimasini yozing:\n👉 *{word}*"
+    return t("practice.recall_prompt", word=word)
 
 
 def _quick_step_kb():
@@ -93,22 +94,24 @@ async def practice_entry(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "practice"):
-            await callback.message.answer("🛑 Hozircha mashq o‘chirilgan.")
+            await callback.message.answer(t("practice.disabled"))
             await callback.answer()
             return
     await state.set_state(PracticeStates.menu)
-    await callback.message.answer("📘 Mashq qilish rejimini tanlang:", reply_markup=practice_menu_kb())
+    await callback.message.answer(
+        t("practice.menu_prompt"), reply_markup=practice_menu_kb()
+    )
     await callback.answer()
 
 
-@router.message(F.text == "📘 Mashq qilish")
+@router.message(F.text == b("menu.practice"))
 async def practice_entry_text(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         if not await is_feature_enabled(session, "practice"):
-            await message.answer("🛑 Hozircha mashq o‘chirilgan.")
+            await message.answer(t("practice.disabled"))
             return
     await state.set_state(PracticeStates.menu)
-    await message.answer("📘 Mashq qilish rejimini tanlang:", reply_markup=practice_menu_kb())
+    await message.answer(t("practice.menu_prompt"), reply_markup=practice_menu_kb())
 
 
 @router.callback_query(F.data.startswith("practice:mode:"))
@@ -129,7 +132,7 @@ async def practice_due_new(callback: CallbackQuery, state: FSMContext) -> None:
     _, limit = await ensure_session(callback.from_user.id)
     items = await build_new_items(callback.from_user.id, limit)
     if not items:
-        await callback.message.edit_text("🫤 Yangi so‘z topilmadi.")
+        await callback.message.edit_text(t("practice.no_new"))
         await state.clear()
         await callback.answer()
         return
@@ -141,7 +144,7 @@ async def practice_due_new(callback: CallbackQuery, state: FSMContext) -> None:
         stats=init_stats(),
     )
     await update_current_review(callback.from_user.id, items[0].id)
-    start_line = f"🚀 Mashq boshlandi!\nYangi so‘zlar: {len(items)} ta."
+    start_line = t("practice.start_new", count=len(items))
     if mode == "quick":
         await state.set_state(PracticeStates.quick_word)
         await edit_or_send(
@@ -164,12 +167,12 @@ async def practice_due_new(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(PracticeStates.due_confirm, F.data == "practice:due:exit")
 async def practice_due_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("🏁 Menyuga qaytdik", reply_markup=None)
+    await callback.message.edit_text(t("practice.back_to_menu"), reply_markup=None)
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
     await callback.message.answer(
-        "Bosh menyu",
+        t("common.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),
@@ -180,19 +183,21 @@ async def practice_due_exit(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "practice:menu")
 async def practice_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(PracticeStates.menu)
-    await callback.message.edit_text("📘 Mashq qilish rejimini tanlang:", reply_markup=practice_menu_kb())
+    await callback.message.edit_text(
+        t("practice.menu_prompt"), reply_markup=practice_menu_kb()
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data == "practice:exit")
 async def practice_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("🏁 Menyuga qaytdik", reply_markup=None)
+    await callback.message.edit_text(t("practice.back_to_menu"), reply_markup=None)
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
     await callback.message.answer(
-        "Bosh menyu",
+        t("common.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),

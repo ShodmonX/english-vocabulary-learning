@@ -1,42 +1,46 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
+from app.services.i18n import b
+
 
 def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         [
-            KeyboardButton(text="➕ So‘z qo‘shish"),
-            KeyboardButton(text="🗂 So‘zlarim"),
+            KeyboardButton(text=b("menu.add_word")),
+            KeyboardButton(text=b("menu.my_words")),
         ],
         [
-            KeyboardButton(text="🗣 Talaffuz"),
-            KeyboardButton(text="🧩 Quiz"),
+            KeyboardButton(text=b("menu.pronunciation")),
+            KeyboardButton(text=b("menu.quiz")),
         ],
         [
-            KeyboardButton(text="📚 Mashq qilish"),
-            KeyboardButton(text="📊 Natijalar"),
+            KeyboardButton(text=b("menu.practice")),
+            KeyboardButton(text=b("menu.stats")),
         ],
         [
-            KeyboardButton(text="🏆 Leaderboards"),
-            KeyboardButton(text="👤 Profil"),
+            KeyboardButton(text=b("menu.leaderboards")),
+            KeyboardButton(text=b("menu.profile")),
         ],
         [
-            KeyboardButton(text="⚙️ Sozlamalar"),
+            KeyboardButton(text=b("menu.settings")),
         ],
     ]
     if is_admin:
-        keyboard.append([KeyboardButton(text="🛠 Admin")])
+        keyboard.append([KeyboardButton(text=b("menu.admin"))])
     if streak and streak > 0:
-        keyboard.append([KeyboardButton(text=f"🔥 {streak} kun")])
+        keyboard.append([KeyboardButton(text=b("menu.streak", days=streak))])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 def settings_kb(reminder_enabled: bool = True) -> InlineKeyboardMarkup:
-    reminder_label = "🔔 Eslatma: ON" if reminder_enabled else "🔕 Eslatma: OFF"
+    reminder_label = (
+        b("settings.reminder_on") if reminder_enabled else b("settings.reminder_off")
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎯 Kunlik maqsad", callback_data="settings:daily_goal")],
-            [InlineKeyboardButton(text="⏰ Eslatma vaqti", callback_data="settings:reminder_time")],
+            [InlineKeyboardButton(text=b("settings.daily_goal"), callback_data="settings:daily_goal")],
+            [InlineKeyboardButton(text=b("settings.reminder_time"), callback_data="settings:reminder_time")],
             [InlineKeyboardButton(text=reminder_label, callback_data="settings:reminder_toggle")],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="settings:back")],
+            [InlineKeyboardButton(text=b("common.back"), callback_data="settings:back")],
         ]
     )

@@ -6,6 +6,7 @@ from app.config import settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
 from app.services.feature_flags import is_feature_enabled
+from app.services.i18n import t
 
 
 class BlockedUserMiddleware(BaseMiddleware):
@@ -23,7 +24,7 @@ class BlockedUserMiddleware(BaseMiddleware):
 
         async with AsyncSessionLocal() as session:
             if await is_feature_enabled(session, "maintenance"):
-                text = "🛠 Hozir texnik ishlar ketmoqda. Keyinroq urinib ko‘ring."
+                text = t("system.maintenance")
                 if isinstance(event, CallbackQuery):
                     await event.answer(text, show_alert=True)
                 else:
@@ -31,7 +32,7 @@ class BlockedUserMiddleware(BaseMiddleware):
                 return
             user = await get_user_by_telegram_id(session, user_id)
             if user and user.is_blocked:
-                text = "⛔ Siz bloklangansiz. Admin bilan bog‘laning."
+                text = t("system.blocked")
                 if isinstance(event, CallbackQuery):
                     await event.answer(text, show_alert=True)
                 else:

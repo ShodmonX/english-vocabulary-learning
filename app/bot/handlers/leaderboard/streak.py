@@ -8,6 +8,7 @@ from app.db.repo.leaderboard import get_top_current_streak, get_top_longest_stre
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
 from app.config import settings
+from app.services.i18n import t
 
 router = Router()
 PAGE_SIZE = 10
@@ -15,11 +16,18 @@ PAGE_SIZE = 10
 
 def _render_list(title: str, items: list[dict[str, object]], page: int) -> str:
     if not items:
-        return f"{title}\n\nHali reytingda hech kim yo‘q. Birinchi bo‘ling!"
-    lines = [f"{title}\n"]
+        return t("leaderboard.list_empty", title=title)
+    lines = [t("leaderboard.list_header", title=title)]
     start = page * PAGE_SIZE
     for idx, item in enumerate(items, start=1 + start):
-        lines.append(f"{idx}. {item['label']} — {item['value']}")
+        lines.append(
+            t(
+                "leaderboard.list_item",
+                index=idx,
+                label=item["label"],
+                value=item["value"],
+            )
+        )
     return "\n".join(lines)
 
 
@@ -32,7 +40,7 @@ async def leaderboard_streak(callback: CallbackQuery, state: FSMContext) -> None
         items = await get_top_current_streak(session, page, PAGE_SIZE + 1, include_all=include_all)
     has_next = len(items) > PAGE_SIZE
     items = items[:PAGE_SIZE]
-    text = _render_list("🔥 Streak TOP", items, page)
+    text = _render_list(t("leaderboard.streak_title"), items, page)
     await _edit_or_send(
         callback.message,
         state,
@@ -51,7 +59,7 @@ async def leaderboard_longest(callback: CallbackQuery, state: FSMContext) -> Non
         items = await get_top_longest_streak(session, page, PAGE_SIZE + 1, include_all=include_all)
     has_next = len(items) > PAGE_SIZE
     items = items[:PAGE_SIZE]
-    text = _render_list("🏆 Longest Streak", items, page)
+    text = _render_list(t("leaderboard.longest_title"), items, page)
     await _edit_or_send(
         callback.message,
         state,

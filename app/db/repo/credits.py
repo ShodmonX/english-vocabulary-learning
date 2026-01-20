@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import CreditBalance, CreditLedger
+from app.services.i18n import t
 
 
 class CreditError(Exception):
@@ -97,10 +98,10 @@ def _calculate_charge_seconds(audio_duration_seconds: int) -> int:
 
 
 def _out_of_credit_message(balance: CreditBalance) -> str:
-    return (
-        "Kredit tugadi. Iltimos, keyinroq yana urinib ko‘ring yoki admin’dan kredit so‘rang."
-        f"\nBASIC: {balance.basic_remaining_seconds}s"
-        f"\nTOPUP: {balance.topup_remaining_seconds}s"
+    return t(
+        "credits.out_of_credit",
+        basic=balance.basic_remaining_seconds,
+        topup=balance.topup_remaining_seconds,
     )
 
 
@@ -115,7 +116,9 @@ async def reserve_credits(
     await _apply_refill_if_due(session, balance, now_utc)
     charge_seconds = _calculate_charge_seconds(audio_duration_seconds)
     if charge_seconds <= 0:
-        raise CreditError("Invalid audio duration", user_message="⚠️ Audio davomiyligi noto‘g‘ri.")
+        raise CreditError(
+            "Invalid audio duration", user_message=t("credits.invalid_duration")
+        )
     total_available = balance.basic_remaining_seconds + balance.topup_remaining_seconds
     if total_available < charge_seconds:
         raise CreditError("Insufficient credits", user_message=_out_of_credit_message(balance))

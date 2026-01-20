@@ -8,6 +8,7 @@ from app.db.repo.public_profile import get_or_create_profile
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
 from app.config import settings
+from app.services.i18n import t
 
 router = Router()
 
@@ -38,15 +39,11 @@ async def open_leaderboard_menu(message: Message, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, message.from_user.id)
         profile = await get_or_create_profile(session, user.id)
-    note = (
-        "\n\nℹ️ Reytingda ko‘rinish uchun sozlamadan yoqing."
-        if not profile.leaderboard_opt_in
-        else ""
-    )
+    note = t("leaderboard.menu_note") if not profile.leaderboard_opt_in else ""
     await _edit_or_send(
         message,
         state,
-        f"🏆 Leaderboards{note}",
+        f"{t('leaderboard.menu_title')}{note}",
         reply_markup=leaderboard_menu_kb(),
     )
 
@@ -60,12 +57,12 @@ async def leaderboard_menu(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "lb:exit")
 async def leaderboard_exit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(leader_message_id=None)
-    await callback.message.edit_text("✅ Leaderboards yopildi.")
+    await callback.message.edit_text(t("leaderboard.closed"))
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id)
         streak = user.current_streak
     await callback.message.answer(
-        "Bosh menyu",
+        t("common.main_menu"),
         reply_markup=main_menu_kb(
             is_admin=callback.from_user.id in settings.admin_user_ids, streak=streak
         ),

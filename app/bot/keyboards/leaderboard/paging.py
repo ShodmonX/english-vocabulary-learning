@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.services.i18n import b
+
 
 def leaderboard_paging_kb(
     list_type: str, page: int, has_next: bool
@@ -8,17 +10,17 @@ def leaderboard_paging_kb(
     if page > 0:
         nav.append(
             InlineKeyboardButton(
-                text="◀️ Prev", callback_data=f"lb:list:{list_type}:{page-1}"
+                text=b("common.prev"), callback_data=f"lb:list:{list_type}:{page-1}"
             )
         )
     if has_next:
         nav.append(
             InlineKeyboardButton(
-                text="Next ▶️", callback_data=f"lb:list:{list_type}:{page+1}"
+                text=b("common.next"), callback_data=f"lb:list:{list_type}:{page+1}"
             )
         )
     rows = []
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton(text="◀️ Orqaga", callback_data="lb:menu")])
+    rows.append([InlineKeyboardButton(text=b("common.back"), callback_data="lb:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

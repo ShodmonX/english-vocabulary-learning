@@ -7,6 +7,7 @@ from app.bot.keyboards.admin.features import admin_features_kb
 from app.db.repo.admin import log_admin_action
 from app.db.session import AsyncSessionLocal
 from app.services.feature_flags import FEATURE_DEFAULTS, is_feature_enabled, toggle_feature
+from app.services.i18n import t
 
 router = Router()
 
@@ -25,7 +26,7 @@ async def admin_features(callback: CallbackQuery, state: FSMContext) -> None:
     async with AsyncSessionLocal() as session:
         flags = await _load_flags(session)
     await callback.message.edit_text(
-        "⚙️ Feature flag’lar:", reply_markup=admin_features_kb(flags)
+        t("admin_features.title"), reply_markup=admin_features_kb(flags)
     )
     await callback.answer()
 
@@ -48,9 +49,9 @@ async def admin_features_toggle(callback: CallbackQuery, state: FSMContext) -> N
             name,
         )
         flags = await _load_flags(session)
-    status = "ON" if enabled else "OFF"
+    status = t("admin_features.status_on") if enabled else t("admin_features.status_off")
     await callback.message.edit_text(
-        f"⚙️ Feature flag’lar: {name} → {status}",
+        t("admin_features.updated", name=name, status=status),
         reply_markup=admin_features_kb(flags),
     )
     await callback.answer()

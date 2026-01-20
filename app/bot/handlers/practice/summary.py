@@ -8,22 +8,23 @@ from app.db.repo.sessions import delete_session
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
 from app.bot.handlers.practice.states import PracticeStates
+from app.services.i18n import t
 
 router = Router()
 
 
 def _summary_text(stats: dict[str, int], streak: int, longest: int) -> str:
-    text = (
-        "🎉 Mashq tugadi!\n"
-        f"😕 Bilmayman: {stats.get('again', 0)}\n"
-        f"😐 Qiyin: {stats.get('hard', 0)}\n"
-        f"🙂 Yaxshi: {stats.get('good', 0)}\n"
-        f"😄 Oson: {stats.get('easy', 0)}"
+    text = t(
+        "practice.summary_body",
+        again=stats.get("again", 0),
+        hard=stats.get("hard", 0),
+        good=stats.get("good", 0),
+        easy=stats.get("easy", 0),
     )
     if streak >= 2:
-        text += f"\n\n🔥 Ketma-ket {streak} kun!"
+        text += t("practice.summary_streak", streak=streak)
     if longest >= 2 and streak == longest:
-        text += f"\n🏆 Yangi rekord! {longest} kun!"
+        text += t("practice.summary_record", longest=longest)
     return text
 
 

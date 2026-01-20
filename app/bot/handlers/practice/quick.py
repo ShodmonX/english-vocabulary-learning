@@ -11,18 +11,19 @@ from app.bot.handlers.practice.common import (
 )
 from app.bot.handlers.practice.states import PracticeStates
 from app.bot.handlers.practice.summary import show_summary
+from app.services.i18n import t
 
 router = Router()
 
 
 def _quick_word_text(idx: int, total: int, word: str) -> str:
-    return f"🟦 {idx}/{total}\n👉 *{word}*"
+    return t("practice.quick_word", index=idx, total=total, word=word)
 
 
 def _quick_reveal_text(word: str, translation: str, example: str | None) -> str:
-    text = f"🟩 *{word}*\n➜ {translation}"
+    text = t("practice.quick_reveal", word=word, translation=translation)
     if example:
-        text += f"\n💬 {example}"
+        text += f"\n{t('practice.quick_reveal_example', example=example)}"
     return text
 
 

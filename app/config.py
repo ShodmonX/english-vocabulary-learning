@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         normalized = value.upper()
         allowed = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
         if normalized not in allowed:
-            raise ValueError("LOG_LEVEL noto‘g‘ri qiymat")
+            raise ValueError("Invalid LOG_LEVEL value")
         return normalized
 
     @field_validator("admin_user_ids", mode="before")
@@ -64,21 +64,21 @@ class Settings(BaseSettings):
         normalized = value.lower()
         allowed = {"daily", "weekly", "monthly"}
         if normalized not in allowed:
-            raise ValueError("AUTO_BACKUP_SCHEDULE noto‘g‘ri qiymat")
+            raise ValueError("Invalid AUTO_BACKUP_SCHEDULE value")
         return normalized
 
     @field_validator("auto_backup_hour")
     @classmethod
     def validate_backup_hour(cls, value: int) -> int:
         if not 0 <= value <= 23:
-            raise ValueError("AUTO_BACKUP_HOUR noto‘g‘ri qiymat")
+            raise ValueError("Invalid AUTO_BACKUP_HOUR value")
         return value
 
     @field_validator("auto_backup_minute")
     @classmethod
     def validate_backup_minute(cls, value: int) -> int:
         if not 0 <= value <= 59:
-            raise ValueError("AUTO_BACKUP_MINUTE noto‘g‘ri qiymat")
+            raise ValueError("Invalid AUTO_BACKUP_MINUTE value")
         return value
 
     @field_validator("stt_overload_mode")
@@ -87,7 +87,7 @@ class Settings(BaseSettings):
         normalized = value.lower()
         allowed = {"queue", "failfast"}
         if normalized not in allowed:
-            raise ValueError("STT_OVERLOAD_MODE noto‘g‘ri qiymat")
+            raise ValueError("Invalid STT_OVERLOAD_MODE value")
         return normalized
 
 

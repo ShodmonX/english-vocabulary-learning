@@ -7,6 +7,9 @@ class IgnoreNotModifiedMiddleware(BaseMiddleware):
         try:
             return await handler(event, data)
         except TelegramBadRequest as exc:
-            if "message is not modified" in str(exc):
+            message = str(exc)
+            if "message is not modified" in message:
+                return None
+            if "query is too old" in message or "query ID is invalid" in message:
                 return None
             raise

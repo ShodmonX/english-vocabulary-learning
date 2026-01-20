@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Package, PackageChangeLog
+from app.services.i18n import t
 
 
 class PackageError(Exception):
@@ -58,18 +60,30 @@ async def get_active_package(session: AsyncSession, package_key: str) -> Package
 
 def validate_manual_price(value: int) -> None:
     if value <= 0 or value > 10_000_000:
-        raise PackageError("Manual price out of range", user_message="❗ Narx noto‘g‘ri.")
+        raise PackageError(
+            "Manual price out of range", user_message=t("packages.price_invalid")
+        )
+
+
+def validate_seconds(value: int) -> None:
+    if value <= 0 or value > 1_000_000:
+        raise PackageError(
+            "Seconds out of range", user_message=t("packages.seconds_invalid")
+        )
 
 
 def validate_stars_price(value: int) -> None:
     if value <= 0 or value > 100_000:
-        raise PackageError("Stars price out of range", user_message="❗ Stars narx noto‘g‘ri.")
+        raise PackageError(
+            "Stars price out of range", user_message=t("packages.stars_invalid")
+        )
 
 
 async def update_package_prices(
     session: AsyncSession,
     package_key: str,
     *,
+    seconds: int | None = None,
     manual_price_uzs: int | None = None,
     stars_price: int | None = None,
     is_active: bool | None = None,
@@ -81,14 +95,21 @@ async def update_package_prices(
     )
     package = result.scalar_one_or_none()
     if not package:
-        raise PackageError("Package not found", user_message="❗ Paket topilmadi.")
+        raise PackageError("Package not found", user_message=t("packages.not_found"))
+    if seconds is not None:
+        validate_seconds(seconds)
     if manual_price_uzs is not None:
         validate_manual_price(manual_price_uzs)
     if stars_price is not None:
         validate_stars_price(stars_price)
+    old_seconds = package.seconds
+    old_attempts = package.approx_attempts_5s
     old_manual = package.manual_price_uzs
     old_stars = package.stars_price
     old_active = package.is_active
+    if seconds is not None:
+        package.seconds = seconds
+        package.approx_attempts_5s = max(1, int(ceil(seconds / 5)))
     if manual_price_uzs is not None:
         package.manual_price_uzs = manual_price_uzs
     if stars_price is not None:
@@ -100,6 +121,10 @@ async def update_package_prices(
         PackageChangeLog(
             admin_id=admin_id,
             package_key=package.package_key,
+            old_seconds=old_seconds,
+            new_seconds=package.seconds,
+            old_approx_attempts_5s=old_attempts,
+            new_approx_attempts_5s=package.approx_attempts_5s,
             old_manual_price_uzs=old_manual,
             new_manual_price_uzs=package.manual_price_uzs,
             old_stars_price=old_stars,

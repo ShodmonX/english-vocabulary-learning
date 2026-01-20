@@ -12,30 +12,37 @@ from app.db.repo.packages import (
     update_package_prices,
 )
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 router = Router()
 
 
 def _packages_text(packages) -> str:
-    lines = ["📦 Paketlar narxi:"]
+    lines = [t("admin_packages.title")]
     for pkg in packages:
-        status = "ON" if pkg.is_active else "OFF"
+        status = t("admin_packages.status_on") if pkg.is_active else t("admin_packages.status_off")
         lines.append(
-            f"\n• {pkg.package_key} ({status})"
-            f"\n  seconds: {pkg.seconds}"
-            f"\n  manual: {pkg.manual_price_uzs} UZS"
-            f"\n  stars: {pkg.stars_price} ⭐"
+            t(
+                "admin_packages.item",
+                package_key=pkg.package_key,
+                status=status,
+                seconds=pkg.seconds,
+                manual=pkg.manual_price_uzs,
+                stars=pkg.stars_price,
+            )
         )
     return "\n".join(lines)
 
 
 def _package_detail_text(pkg) -> str:
-    status = "ON" if pkg.is_active else "OFF"
-    return (
-        f"📦 {pkg.package_key} ({status})\n"
-        f"seconds: {pkg.seconds}\n"
-        f"manual: {pkg.manual_price_uzs} UZS\n"
-        f"stars: {pkg.stars_price} ⭐"
+    status = t("admin_packages.status_on") if pkg.is_active else t("admin_packages.status_off")
+    return t(
+        "admin_packages.detail",
+        package_key=pkg.package_key,
+        status=status,
+        seconds=pkg.seconds,
+        manual=pkg.manual_price_uzs,
+        stars=pkg.stars_price,
     )
 
 
@@ -58,7 +65,7 @@ async def admin_packages_edit(callback: CallbackQuery, state: FSMContext) -> Non
     async with AsyncSessionLocal() as session:
         pkg = await get_package(session, package_key)
     if not pkg:
-        await callback.answer("Paket topilmadi.", show_alert=True)
+        await callback.answer(t("admin_packages.not_found"), show_alert=True)
         return
     await state.update_data(package_key=pkg.package_key)
     await state.set_state(AdminStates.package_edit)
@@ -75,7 +82,18 @@ async def admin_packages_manual_prompt(callback: CallbackQuery, state: FSMContex
     package_key = callback.data.split(":")[-1]
     await state.update_data(package_key=package_key)
     await state.set_state(AdminStates.package_manual_price)
-    await callback.message.edit_text("Yangi manual narx (UZS) kiriting:")
+    await callback.message.edit_text(t("admin_packages.prompt_manual"))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:packages:seconds:"))
+async def admin_packages_seconds_prompt(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    package_key = callback.data.split(":")[-1]
+    await state.update_data(package_key=package_key)
+    await state.set_state(AdminStates.package_seconds)
+    await callback.message.edit_text(t("admin_packages.prompt_seconds"))
     await callback.answer()
 
 
@@ -86,7 +104,7 @@ async def admin_packages_stars_prompt(callback: CallbackQuery, state: FSMContext
     package_key = callback.data.split(":")[-1]
     await state.update_data(package_key=package_key)
     await state.set_state(AdminStates.package_stars_price)
-    await callback.message.edit_text("Yangi Stars narx kiriting:")
+    await callback.message.edit_text(t("admin_packages.prompt_stars"))
     await callback.answer()
 
 
@@ -106,12 +124,12 @@ async def admin_packages_toggle(callback: CallbackQuery, state: FSMContext) -> N
                 reason="toggle",
             )
         except PackageError as exc:
-            await callback.answer(exc.user_message or "Xatolik.", show_alert=True)
+            await callback.answer(exc.user_message or t("admin_packages.error"), show_alert=True)
             return
     await callback.message.edit_text(
         _package_detail_text(pkg), reply_markup=admin_package_edit_kb(pkg.package_key, pkg.is_active)
     )
-    await callback.answer("✅ Saqlandi")
+    await callback.answer(t("admin_packages.saved"))
 
 
 @router.message(AdminStates.package_manual_price)
@@ -120,12 +138,12 @@ async def admin_packages_manual_save(message: Message, state: FSMContext) -> Non
         return
     value = parse_int(message.text or "")
     if not value:
-        await message.answer("❗ Raqam kiriting.")
+        await message.answer(t("admin_packages.invalid_number"))
         return
     data = await state.get_data()
     package_key = data.get("package_key")
     if not package_key:
-        await message.answer("⚠️ Paket topilmadi.")
+        await message.answer(t("admin_packages.not_found_message"))
         return
     async with AsyncSessionLocal() as session:
         try:
@@ -137,9 +155,41 @@ async def admin_packages_manual_save(message: Message, state: FSMContext) -> Non
                 reason="manual_price",
             )
         except PackageError as exc:
-            await message.answer(exc.user_message or "Xatolik.")
+            await message.answer(exc.user_message or t("admin_packages.error"))
             return
     await message.answer(_package_detail_text(pkg), reply_markup=admin_package_edit_kb(pkg.package_key, pkg.is_active))
+    await state.set_state(AdminStates.package_edit)
+
+
+@router.message(AdminStates.package_seconds)
+async def admin_packages_seconds_save(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    value = parse_int(message.text or "")
+    if not value:
+        await message.answer(t("admin_packages.invalid_number"))
+        return
+    data = await state.get_data()
+    package_key = data.get("package_key")
+    if not package_key:
+        await message.answer(t("admin_packages.not_found_message"))
+        return
+    async with AsyncSessionLocal() as session:
+        try:
+            pkg = await update_package_prices(
+                session,
+                package_key,
+                seconds=value,
+                admin_id=message.from_user.id,
+                reason="seconds",
+            )
+        except PackageError as exc:
+            await message.answer(exc.user_message or t("admin_packages.error"))
+            return
+    await message.answer(
+        _package_detail_text(pkg),
+        reply_markup=admin_package_edit_kb(pkg.package_key, pkg.is_active),
+    )
     await state.set_state(AdminStates.package_edit)
 
 
@@ -149,12 +199,12 @@ async def admin_packages_stars_save(message: Message, state: FSMContext) -> None
         return
     value = parse_int(message.text or "")
     if not value:
-        await message.answer("❗ Raqam kiriting.")
+        await message.answer(t("admin_packages.invalid_number"))
         return
     data = await state.get_data()
     package_key = data.get("package_key")
     if not package_key:
-        await message.answer("⚠️ Paket topilmadi.")
+        await message.answer(t("admin_packages.not_found_message"))
         return
     async with AsyncSessionLocal() as session:
         try:
@@ -166,7 +216,7 @@ async def admin_packages_stars_save(message: Message, state: FSMContext) -> None
                 reason="stars_price",
             )
         except PackageError as exc:
-            await message.answer(exc.user_message or "Xatolik.")
+            await message.answer(exc.user_message or t("admin_packages.error"))
             return
     await message.answer(_package_detail_text(pkg), reply_markup=admin_package_edit_kb(pkg.package_key, pkg.is_active))
     await state.set_state(AdminStates.package_edit)

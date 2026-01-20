@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.services.i18n import b
+
 
 def quiz_options_kb(options: list[tuple[int, str]]) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
@@ -17,6 +19,5 @@ def quiz_options_kb(options: list[tuple[int, str]]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([InlineKeyboardButton(text="🚪 Chiqish", callback_data="quiz:exit")])
+    rows.append([InlineKeyboardButton(text=b("quiz.exit"), callback_data="quiz:exit")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-

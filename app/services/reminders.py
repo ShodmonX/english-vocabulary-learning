@@ -13,6 +13,7 @@ from app.db.repo.stats import get_due_count
 from app.db.repo.user_settings import get_user_settings
 from app.db.repo.users import get_user_by_telegram_id
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import t
 
 
 class ReminderService:
@@ -73,5 +74,5 @@ class ReminderService:
 
         await bot.send_message(
             telegram_id,
-            "⏰ Mashq vaqti!\nBugun bir nechta so‘zlar sizni kutyapti 📚😉",
+            t("reminder.message"),
         )

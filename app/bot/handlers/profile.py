@@ -17,6 +17,7 @@ from app.db.repo.packages import get_active_package, list_packages
 from app.db.repo.stars_payments import create_pending_payment, credit_paid_payment, mark_failed
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
+from app.services.i18n import b, t
 
 router = Router()
 
@@ -28,42 +29,51 @@ def _format_refill(dt) -> str:
 
 
 def _profile_text(user, summary: dict[str, object]) -> str:
-    username = f"@{user.username}" if user.username else "—"
-    return (
-        "👤 Profil\n"
-        f"ID: {user.telegram_id}\n"
-        f"Username: {username}\n\n"
-        f"BASIC: {summary['basic_remaining_seconds']}s\n"
-        f"TOPUP: {summary['topup_remaining_seconds']}s\n"
-        f"Keyingi refill: {_format_refill(summary['next_basic_refill_at'])} ({settings.timezone})\n"
-        f"Oy bo‘yicha ishlatilgan: {summary['monthly_used_seconds']}s"
+    username = f"@{user.username}" if user.username else t("common.none")
+    return t(
+        "profile.body",
+        telegram_id=user.telegram_id,
+        username=username,
+        basic=summary["basic_remaining_seconds"],
+        topup=summary["topup_remaining_seconds"],
+        refill=_format_refill(summary["next_basic_refill_at"]),
+        timezone=settings.timezone,
+        used=summary["monthly_used_seconds"],
     )
 
 
 def _packages_admin_text(packages) -> str:
-    lines = ["💳 Admin orqali to‘ldirish paketlari:"]
+    lines = [t("profile.topup_admin.header")]
     for pkg in packages:
         lines.append(
-            f"\n• {pkg.package_key}: {pkg.seconds}s "
-            f"({pkg.approx_attempts_5s} ta ~5s urinish)"
-            f"\n  Narx: {pkg.manual_price_uzs} UZS"
+            t(
+                "profile.topup_admin.item",
+                package_key=pkg.package_key,
+                seconds=pkg.seconds,
+                attempts=pkg.approx_attempts_5s,
+                price=pkg.manual_price_uzs,
+            )
         )
-    admin_tag = settings.admin_contact_username or "@your_admin"
-    lines.append("\n📩 Admin bilan bog‘laning:")
-    lines.append(f"{admin_tag}")
-    lines.append("\nPaket nomini yozib yuboring: BASIC / STANDARD / PRO")
+    admin_tag = settings.admin_contact_username or t("profile.topup_admin.default_admin")
+    lines.append(t("profile.topup_admin.contact"))
+    lines.append(admin_tag)
+    lines.append(t("profile.topup_admin.footer"))
     return "\n".join(lines)
 
 
 def _packages_stars_text(packages) -> str:
-    lines = ["⭐ Telegram Stars orqali to‘ldirish:"]
+    lines = [t("profile.topup_stars.header")]
     for pkg in packages:
         lines.append(
-            f"\n• {pkg.package_key}: {pkg.seconds}s "
-            f"({pkg.approx_attempts_5s} ta ~5s urinish)"
-            f"\n  Narx: {pkg.stars_price} ⭐"
+            t(
+                "profile.topup_stars.item",
+                package_key=pkg.package_key,
+                seconds=pkg.seconds,
+                attempts=pkg.approx_attempts_5s,
+                price=pkg.stars_price,
+            )
         )
-    lines.append("\nStars orqali to‘lov avtomatik — kredit darhol qo‘shiladi.")
+    lines.append(t("profile.topup_stars.footer"))
     return "\n".join(lines)
 
 
@@ -74,7 +84,7 @@ async def _render_profile(message: Message) -> None:
     await message.answer(_profile_text(user, summary), reply_markup=profile_refresh_kb())
 
 
-@router.message(F.text == "👤 Profil")
+@router.message(F.text == b("menu.profile"))
 async def profile_menu(message: Message) -> None:
     await _render_profile(message)
 
@@ -127,18 +137,23 @@ async def profile_stars_invoice(callback: CallbackQuery) -> None:
         user = await get_or_create_user(session, callback.from_user.id, callback.from_user.username)
         package = await get_active_package(session, package_id.upper())
         if not package:
-            await callback.answer("Paket mavjud emas yoki o‘chirilgan.", show_alert=True)
+            await callback.answer(t("profile.package_inactive"), show_alert=True)
             return
         try:
             payment = await create_pending_payment(session, user.id, package.package_key)
         except ValueError:
-            await callback.answer("Paket mavjud emas yoki o‘chirilgan.", show_alert=True)
+            await callback.answer(t("profile.package_inactive"), show_alert=True)
             return
-    prices = [LabeledPrice(label=f"{package.package_key} paket", amount=payment.amount_stars)]
+    prices = [
+        LabeledPrice(
+            label=t("profile.invoice_label", package_key=package.package_key),
+            amount=payment.amount_stars,
+        )
+    ]
     try:
         await callback.message.answer_invoice(
-            title=f"{package.package_key} paket",
-            description=f"{package.seconds}s top-up krediti",
+            title=t("profile.invoice_title", package_key=package.package_key),
+            description=t("profile.invoice_description", seconds=package.seconds),
             payload=payment.payload,
             provider_token="",
             currency="XTR",
@@ -148,7 +163,7 @@ async def profile_stars_invoice(callback: CallbackQuery) -> None:
         async with AsyncSessionLocal() as session:
             await mark_failed(session, payment.payload, status="failed")
         await callback.message.answer(
-            "Hozir to‘lov tizimi vaqtincha ishlamayapti. Keyinroq urinib ko‘ring."
+            t("payments.unavailable")
         )
     await callback.answer()
 
@@ -161,7 +176,7 @@ async def stars_pre_checkout(pre_checkout: PreCheckoutQuery) -> None:
         )
         payment = result.scalar_one_or_none()
     if not payment or payment.status not in {"pending", "paid"}:
-        await pre_checkout.answer(ok=False, error_message="To‘lov topilmadi.")
+        await pre_checkout.answer(ok=False, error_message=t("payments.not_found"))
         return
     await pre_checkout.answer(ok=True)
 
@@ -181,8 +196,8 @@ async def stars_success_payment(message: Message) -> None:
     if seconds is None:
         return
     if seconds == 0:
-        await message.answer("To‘lov allaqachon tasdiqlangan.")
+        await message.answer(t("payments.already_confirmed"))
         return
     await message.answer(
-        f"To‘lov qabul qilindi. {seconds} sekund TOPUP kreditingizga qo‘shildi."
+        t("payments.success", seconds=seconds)
     )

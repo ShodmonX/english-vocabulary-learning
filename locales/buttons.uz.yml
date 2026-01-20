@@ -1,0 +1,242 @@
+common:
+  missing: "[missing:{key}]"
+  back: "⬅️ Orqaga"
+  confirm_yes: "✅ Ha"
+  confirm_no: "❌ Bekor"
+  prev: "◀️ Oldingi"
+  next: "Keyingi ▶️"
+  prev_page: "◀️ Oldingi"
+  next_page: "Keyingi ▶️"
+
+menu:
+  add_word: "➕ So‘z qo‘shish"
+  my_words: "🗂 So‘zlarim"
+  pronunciation: "🗣 Talaffuz"
+  quiz: "🧩 Quiz"
+  practice: "📚 Mashq qilish"
+  stats: "📊 Natijalar"
+  leaderboards: "🏆 Reyting"
+  profile: "👤 Profil"
+  settings: "⚙️ Sozlamalar"
+  admin: "🛠 Admin"
+  streak: "🔥 {days} kun"
+
+settings:
+  reminder_on: "🔔 Eslatma: ON"
+  reminder_off: "🔕 Eslatma: OFF"
+  daily_goal: "🎯 Kunlik maqsad"
+  reminder_time: "⏰ Eslatma vaqti"
+
+profile:
+  refresh: "🔄 Yangilash"
+  topup_admin: "➕ Admin orqali to‘ldirish"
+  topup_stars: "⭐ Telegram Stars orqali"
+  back: "⬅️ Profilga qaytish"
+  stars_package: "⭐ {key}"
+
+admin:
+  stats: "📊 Umumiy statistika"
+  users: "👥 Foydalanuvchilar"
+  srs: "🧠 SRS nazorati"
+  content: "📘 Kontent nazorati"
+  packages: "📦 Paketlar narxi"
+  credits: "💳 Kreditlar"
+  db_management: "🗄 DB boshqaruvi"
+  features: "⚙️ Funksiyalar"
+  maintenance: "🧪 Texnik/Debug"
+  exit: "🚪 Chiqish"
+
+admin_credits:
+  add_id: "➕ ID orqali kredit"
+  forward: "📨 Forward orqali kredit"
+
+admin_packages:
+  edit_basic: "✏️ BASIC"
+  edit_standard: "✏️ STANDARD"
+  edit_pro: "✏️ PRO"
+  edit_seconds: "⏱ Sekundlar"
+  edit_manual: "💰 Manual narx (UZS) o‘zgartirish"
+  edit_stars: "⭐ Stars narx o‘zgartirish"
+  deactivate: "⛔️ O‘chirish"
+  activate: "✅ Aktiv qilish"
+
+admin_users:
+  search: "🔍 User qidirish"
+  unblock: "🔓 Blokdan chiqarish"
+  block: "🚫 Userni bloklash"
+  srs_reset: "🧠 SRS reset"
+  content: "📘 Kontent"
+
+admin_features:
+  label: "{name}: {status}"
+  status_on: "ON ✅"
+  status_off: "OFF ❌"
+  quiz: "🧩 Quiz"
+  pronunciation: "🗣 Talaffuz"
+  practice: "📘 Mashq"
+  translation: "🌍 Tarjima"
+
+admin_maint:
+  reset_fsm: "♻️ FSM reset (men)"
+  cleanup: "🧹 Temp fayllarni tozalash"
+  logs: "📄 So‘nggi error loglar"
+
+admin_db:
+  backup_now: "📦 Backup olish"
+  auto_status: "🕒 Avto-backup holati"
+  cleanup_auto: "🧹 Avto-backuplarni tozalash"
+  list_all: "📂 Backup ro‘yxati (hammasi)"
+  list_auto: "📂 Avto-backuplar"
+  list_manual: "📂 Qo‘lda olingan backuplar"
+  list_pre_restore: "📂 Tiklashdan oldingi backuplar"
+  restore: "♻️ Tiklash"
+  delete: "🧹 O‘chirish"
+  info: "ℹ️ Ma’lumot"
+  cleanup_confirm: "✅ Ha, tozalash"
+  confirm_restore: "⚠️ HA, TIKLASH"
+  confirm_delete: "✅ Ha, o‘chirish"
+
+admin_content:
+  by_user: "🔍 User bo‘yicha so‘zlar"
+  edit_word: "✏️ So‘zni tahrirlash"
+  edit_translation: "📝 Tarjimani tahrirlash"
+  edit_example: "💬 Misolni tahrirlash"
+  delete: "🗑 O‘chirish"
+
+admin_srs:
+  reset_full: "✅ To‘liq reset"
+  reset_reps: "♻️ Faqat repetitions=0"
+
+help:
+  quick: "📌 Tez start"
+  add: "➕ So‘z qo‘shish"
+  srs: "🔁 Bugungi takrorlash"
+  quiz: "🧩 Quiz"
+  pron: "🗣 Talaffuz"
+  words: "🗂 So‘zlarim"
+  settings: "⚙️ Sozlamalar"
+  trouble: "🧩 Muammolar"
+  privacy: "🔐 Maxfiylik"
+  admin: "🛠 Admin"
+  exit: "◀️ Chiqish"
+  menu: "🏁 Menyuga"
+
+manage:
+  search: "🔎 Qidirish"
+  recent: "🕒 Oxirgilar"
+  menu: "🏠 Menyu"
+  next: "➡️ Keyingi"
+  edit: "✏️ Tahrirlash"
+  delete: "🗑 O‘chirish"
+  delete_confirm: "✅ Ha, o‘chirish"
+  cancel: "❌ Bekor qilish"
+  field_word: "🔤 So‘z"
+  field_translation: "📝 Ma’nosi"
+  field_example: "💬 Misol"
+  translation_force: "✅ Baribir saqlash"
+  translation_retry: "✏️ Boshqa tarjima"
+  example_skip: "⏭ O‘tkazib yuborish"
+
+add_word:
+  translation_accept: "✅ Davom etish"
+  translation_retry: "🔄 Boshqa tarjima"
+  example_skip: "⏭ Misolni o‘tkazib yuborish"
+
+pron:
+  menu_single: "🎯 Bitta so‘z tekshirish"
+  menu_quiz: "🧩 Talaffuz quiz"
+  menu_select: "🎯 Tanlab talaffuz quiz"
+  recent: "🕒 Oxirgilar"
+  search: "🔎 Qidirish"
+  menu: "🏠 Menyu"
+  next: "➡️ Keyingi"
+  other_word: "🔁 Boshqa so‘z"
+  other_word_list: "🗂 Boshqa so‘z"
+  retry: "🔁 Qayta urinib ko‘rish"
+  exit: "🏁 Menyuga qaytish"
+  quiz_stop: "🛑 Quizni to‘xtatish"
+  quiz_again: "🔁 Yana quiz"
+  selected: "✅ Tanlanganlar ({count})"
+  quiz_start: "▶️ Quizni boshlash"
+  selected_prefix: "✅ "
+  add_prefix: "➕ "
+
+quiz:
+  exit: "🚪 Chiqish"
+
+practice:
+  quick: "⚡ Tezkor mashq"
+  recall: "🧠 O‘ylab javob berish"
+  show_meaning: "👀 Ma’nosini ko‘rish"
+  skip: "⏭ O‘tkazib yuborish"
+  stop: "🛑 To‘xtatish"
+  rate_again: "😕 Bilmayman"
+  rate_hard: "😐 Qiyin"
+  rate_good: "🙂 Yaxshi"
+  rate_easy: "😄 Oson"
+  again: "🔁 Yana mashq"
+  change_mode: "🧠 Rejimni almashtirish"
+  menu: "🏁 Menyuga"
+  due_new: "➕ Yangi so‘zlar bilan mashq"
+  menu_back: "◀️ Menyuga qaytish"
+
+leaderboard:
+  streak_top: "🔥 Streak TOP"
+  longest: "🏆 Longest Streak"
+  words_top: "📚 So‘zlar TOP"
+  settings: "⚙️ Reyting sozlamalari"
+  exit: "◀️ Chiqish"
+  opt_on: "✅ Ko‘rinish: ON"
+  opt_off: "🚫 Ko‘rinish: OFF"
+  username_on: "👤 Username: ON"
+  username_off: "👤 Username: OFF"
+  alias: "✍️ Public name"
+
+settings_menu:
+  learning: "🧠 O‘rganish"
+  tests: "🧩 Testlar"
+  language: "🌍 Til & Tarjima"
+  notifications: "🔔 Bildirishnomalar"
+  limits: "⚡ Cheklovlar"
+  advanced: "🛠 Texnik"
+
+settings_learning:
+  words_per_day: "📚 Kuniga nechta so‘z?"
+  srs: "🔁 Takrorlash algoritmi"
+  reset: "🔄 Defaultga qaytarish"
+
+settings_tests:
+  pron_on: "🗣 Talaffuz: ON"
+  pron_off: "🗣 Talaffuz: OFF"
+  quiz_size: "🧩 Quizdagi so‘zlar soni"
+  pron_mode: "🗣 Talaffuz rejimi"
+  reset: "🔄 Defaultga qaytarish"
+  selected: "✅ {text}"
+  mode_single: "Faqat bitta so‘z"
+  mode_quiz: "Faqat quiz"
+  mode_both: "Ikkalasi ham"
+
+settings_language:
+  auto_on: "🤖 Avto tarjima: ON"
+  auto_off: "🤖 Avto tarjima: OFF"
+  base_lang: "🌍 Asosiy til"
+  engine: "🔄 Tarjima engine"
+  reset: "🔄 Defaultga qaytarish"
+
+settings_notifications:
+  status_on: "🔔 Eslatmalar: ON"
+  status_off: "🔕 Eslatmalar: OFF"
+  time: "⏰ Eslatma vaqti"
+  reset: "🔄 Defaultga qaytarish"
+
+settings_limits:
+  status_on: "🔒 Limitlar: ON"
+  status_off: "🔓 Limitlar: OFF"
+  pronunciation: "⚡ Kunlik talaffuz limiti"
+  quiz: "⚡ Quiz limiti (tez kunda)"
+  reset: "🔄 Defaultga qaytarish"
+
+settings_advanced:
+  reset_all: "🔄 Barcha sozlamalarni reset qilish"
+  clear_sessions: "🧹 Sessionlarni tozalash"
+  reset_confirm: "✅ Ha, reset"
