@@ -645,7 +645,7 @@ practice:
   start_due: "🚀 Mashq boshlandi!\nBugun {count} ta due so‘z."
   start_new: "🚀 Mashq boshlandi!\nYangi so‘zlar: {count} ta."
   quick_word: "🟦 {index}/{total}\n👉 *{word}*"
-  recall_prompt: "🧠 Tarjimasini yozing:\n👉 *{word}*"
+  recall_prompt: "🧠 Inglizchasini yozing:\n👉 *{word}*"
   menu_prompt: "📘 Mashq qilish rejimini tanlang:"
   no_new: "🫤 Yangi so‘z topilmadi."
   back_to_menu: "🏁 Menyuga qaytdik"

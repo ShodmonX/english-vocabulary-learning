@@ -64,7 +64,7 @@ async def _start_mode(message: Message, state: FSMContext, mode: str, user_id: i
         await edit_or_send(
             message,
             state,
-            f"{start_line}\n\n{_recall_prompt_text(items[0].word)}",
+            f"{start_line}\n\n{_recall_prompt_text(items[0].translation)}",
             reply_markup=_recall_prompt_kb(),
         )
 

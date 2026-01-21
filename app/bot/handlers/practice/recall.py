@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -54,7 +55,7 @@ async def _advance(message: Message, state: FSMContext) -> None:
     await edit_or_send(
         message,
         state,
-        _recall_prompt_text(word.word),
+        _recall_prompt_text(word.translation),
         reply_markup=practice_recall_prompt_kb(),
     )
 
@@ -74,14 +75,18 @@ async def recall_answer(message: Message, state: FSMContext) -> None:
     if not word:
         await show_summary(message, state)
         return
-    is_close = fuzzy_match(answer, word.translation)
+    is_close = fuzzy_match(answer, word.word)
     await state.set_state(PracticeStates.scoring)
     await edit_or_send(
         message,
         state,
-        _recall_result_text(word.word, word.translation, answer, is_close),
+        _recall_result_text(word.translation, word.word, answer, is_close),
         reply_markup=practice_quick_rate_kb(),
     )
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 @router.callback_query(PracticeStates.recall_await_answer, F.data == "practice:recall:skip")
