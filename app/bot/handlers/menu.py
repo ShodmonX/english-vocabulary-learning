@@ -3,7 +3,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot.handlers.add_word import start_add_word_message
+from app.bot.handlers.level_test import open_level_test_menu_message
 from app.bot.handlers.quiz import start_quiz_message
+from app.bot.handlers.word_review import open_word_review_message
 from app.bot.handlers.settings.menu import open_settings_message
 from app.bot.handlers.stats import show_stats_message
 from app.bot.handlers.practice.menu import practice_entry_text
@@ -40,11 +42,21 @@ async def menu_settings(message: Message, state: FSMContext) -> None:
     await open_settings_message(message, message.from_user.id, state)
 
 
+@router.message(F.text == b("menu.level_test"))
+async def menu_level_test(message: Message, state: FSMContext) -> None:
+    await open_level_test_menu_message(message, state)
+
+
 @router.message(F.text == b("menu.my_words"))
 async def menu_manage_words(message: Message, state: FSMContext) -> None:
     from app.bot.handlers.manage_words import open_manage_menu
 
     await open_manage_menu(message, state)
+
+
+@router.message(F.text == b("menu.word_review"))
+async def menu_word_review(message: Message, state: FSMContext) -> None:
+    await open_word_review_message(message, state)
 
 
 @router.message(F.text == b("menu.pronunciation"))

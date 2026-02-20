@@ -7,21 +7,22 @@ def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyb
     keyboard = [
         [
             KeyboardButton(text=b("menu.add_word")),
-            KeyboardButton(text=b("menu.my_words")),
+            KeyboardButton(text=b("menu.practice")),
         ],
         [
-            KeyboardButton(text=b("menu.pronunciation")),
+            KeyboardButton(text=b("menu.my_words")),
             KeyboardButton(text=b("menu.quiz")),
         ],
         [
-            KeyboardButton(text=b("menu.practice")),
-            KeyboardButton(text=b("menu.stats")),
+            KeyboardButton(text=b("menu.pronunciation")),
+            KeyboardButton(text=b("menu.level_test")),
         ],
         [
-            KeyboardButton(text=b("menu.leaderboards")),
+            KeyboardButton(text=b("menu.stats")),
             KeyboardButton(text=b("menu.profile")),
         ],
         [
+            KeyboardButton(text=b("menu.leaderboards")),
             KeyboardButton(text=b("menu.settings")),
         ],
     ]

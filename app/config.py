@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     manual_backup_prefix: str = "manual_vocab_"
     pre_restore_backup_prefix: str = "pre_restore_vocab_"
     backup_lock_timeout_seconds: int = 600
+    placement_time_limit_seconds: int = 900
+    placement_question_count: int = 30
+    placement_mcq_count: int = 18
+    placement_typing_count: int = 12
 
     @field_validator("log_level")
     @classmethod

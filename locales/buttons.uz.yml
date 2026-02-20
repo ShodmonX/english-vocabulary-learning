@@ -1,6 +1,7 @@
 common:
   missing: "[missing:{key}]"
   back: "⬅️ Orqaga"
+  back_main_menu: "⬅️ Bosh menyu"
   confirm_yes: "✅ Ha"
   confirm_no: "❌ Bekor"
   prev: "◀️ Oldingi"
@@ -18,8 +19,29 @@ menu:
   leaderboards: "🏆 Reyting"
   profile: "👤 Profil"
   settings: "⚙️ Sozlamalar"
+  level_test: "🧪 Level Test"
+  word_review: "🧾 Word Review"
   admin: "🛠 Admin"
   streak: "🔥 {days} kun"
+
+word_review:
+  detail: "ℹ️ Batafsil"
+
+level_test:
+  start: "▶️ Boshlash"
+  quick: "⚡ Tez test (30 savol)"
+  full: "🎯 Full test"
+  about: "ℹ️ Nima bu?"
+  retry: "🔁 Qayta urinib ko‘rish"
+  back: "◀️ Back"
+  next: "⏭ Next"
+  skip: "⏭ Skip"
+  flag: "🚩 Flag"
+  unflag: "🚩 Unflag"
+  stop: "🛑 Stop"
+  prev_flag: "◀ PrevFlag"
+  next_flag: "NextFlag ▶"
+  finish: "✅ Finish"
 
 settings:
   reminder_on: "🔔 Eslatma: ON"
@@ -45,12 +67,17 @@ admin:
   packages: "📦 Paketlar narxi"
   credits: "💳 Kreditlar"
   contact: "👤 Admin username"
+  level_test_questions: "🧪 Level test savollari"
   admins: "👥 Adminlar"
   global_limit: "⚙️ Global limit"
   db_management: "🗄 DB boshqaruvi"
   features: "⚙️ Funksiyalar"
   maintenance: "🧪 Texnik/Debug"
   exit: "🚪 Chiqish"
+
+admin_level_test:
+  import_json: "📥 JSON import"
+  add_manual: "✍️ Qo‘lda qo‘shish"
 
 admin_admins:
   add: "➕ Admin qo‘shish"
@@ -140,6 +167,7 @@ help:
 manage:
   search: "🔎 Qidirish"
   recent: "🕒 Oxirgilar"
+  word_review: "🧾 Word Review"
   menu: "🏠 Menyu"
   next: "➡️ Keyingi"
   edit: "✏️ Tahrirlash"

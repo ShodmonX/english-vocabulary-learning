@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -334,3 +336,86 @@ class TrainingSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
     current_word_id: Mapped[int | None] = mapped_column(ForeignKey("words.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LevelTestQuestion(Base):
+    __tablename__ = "level_test_questions"
+    __table_args__ = (
+        CheckConstraint("difficulty >= 1 AND difficulty <= 5", name="ck_level_test_questions_difficulty"),
+        Index("ix_level_test_questions_active_type", "is_active", "type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    level_tag: Mapped[str] = mapped_column(String(2), nullable=False)
+    difficulty: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    choices: Mapped[list[str] | None] = mapped_column(JSONB)
+    correct_answer: Mapped[str | None] = mapped_column(Text)
+    accepted_answers: Mapped[list[str] | None] = mapped_column(JSONB)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LevelTestAttempt(Base):
+    __tablename__ = "level_test_attempts"
+    __table_args__ = (
+        Index("ix_level_test_attempts_user_created", "user_id", "created_at"),
+        Index(
+            "uq_level_test_attempts_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    ui_mode: Mapped[str] = mapped_column(String(16), default="LINEAR", nullable=False)
+    current_index: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE", nullable=False)
+    answered_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    flagged_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    score_pct: Mapped[float | None] = mapped_column(Float)
+    level_estimate: Mapped[str | None] = mapped_column(String(2))
+    confidence: Mapped[str | None] = mapped_column(String(16))
+    chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    items: Mapped[list["LevelTestAttemptItem"]] = relationship(
+        "LevelTestAttemptItem",
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+    )
+
+
+class LevelTestAttemptItem(Base):
+    __tablename__ = "level_test_attempt_items"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "index", name="uq_level_test_attempt_items_attempt_index"),
+        Index("ix_level_test_attempt_items_attempt", "attempt_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("level_test_attempts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_id: Mapped[int] = mapped_column(ForeignKey("level_test_questions.id"), nullable=False)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    answer_payload: Mapped[dict | None] = mapped_column(JSONB)
+    is_correct: Mapped[bool | None] = mapped_column(Boolean)
+
+    attempt: Mapped["LevelTestAttempt"] = relationship("LevelTestAttempt", back_populates="items")
+    question: Mapped["LevelTestQuestion"] = relationship("LevelTestQuestion")

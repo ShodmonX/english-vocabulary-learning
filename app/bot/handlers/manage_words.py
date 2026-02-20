@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.keyboards.main import main_menu_kb
 from app.config import settings
+from app.bot.handlers.word_review import open_word_review_callback
 from app.bot.keyboards.manage_words import (
     delete_confirm_kb,
     edit_menu_kb,
@@ -49,6 +51,15 @@ class ManageStates(StatesGroup):
     edit_translation = State()
     edit_translation_warning = State()
     edit_example = State()
+
+
+async def _delete_user_message_safe(message: Message) -> None:
+    if not message.from_user or message.from_user.is_bot:
+        return
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
 
 
 def _word_label(word: str, translation: str) -> str:
@@ -303,6 +314,12 @@ async def manage_recent(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data == "manage:word_review")
+async def manage_word_review(callback: CallbackQuery, state: FSMContext) -> None:
+    await open_word_review_callback(callback, state)
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("word:open:"))
 async def manage_open_word(callback: CallbackQuery, state: FSMContext) -> None:
     _, _, word_id, context, page = callback.data.split(":")
@@ -388,7 +405,8 @@ async def manage_edit_field(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(ManageStates.edit_word)
 async def manage_edit_word(message: Message, state: FSMContext) -> None:
-    new_word = message.text.strip()
+    new_word = (message.text or "").strip()
+    await _delete_user_message_safe(message)
     if not new_word:
         await message.answer(t("manage.word_empty"))
         return
@@ -418,7 +436,8 @@ async def manage_edit_word(message: Message, state: FSMContext) -> None:
 
 @router.message(ManageStates.edit_translation)
 async def manage_edit_translation(message: Message, state: FSMContext) -> None:
-    new_translation = message.text.strip()
+    new_translation = (message.text or "").strip()
+    await _delete_user_message_safe(message)
     if not new_translation:
         await message.answer(t("manage.translation_empty"))
         return
@@ -506,7 +525,8 @@ async def manage_translation_retry(callback: CallbackQuery, state: FSMContext) -
 
 @router.message(ManageStates.edit_example)
 async def manage_edit_example(message: Message, state: FSMContext) -> None:
-    new_example = message.text.strip()
+    new_example = (message.text or "").strip()
+    await _delete_user_message_safe(message)
     data = await state.get_data()
     word_id = int(data.get("word_id"))
     prompt_id = data.get("prompt_message_id")

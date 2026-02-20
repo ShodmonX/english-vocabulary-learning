@@ -1,8 +1,10 @@
 import json
 import random
+import html
 from pathlib import Path
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -21,6 +23,7 @@ from app.utils.bad_words import contains_bad_words
 from app.services.i18n import b, t
 
 router = Router()
+FLOW_MESSAGE_ID_KEY = "add_word_flow_message_id"
 
 
 class AddWordStates(StatesGroup):
@@ -68,12 +71,85 @@ def example_skip_kb() -> InlineKeyboardMarkup:
     )
 
 
+def _start_prompt_text() -> str:
+    examples = _WORD_EXAMPLES or [
+        "abandon",
+        "curious",
+        "improve",
+        "journey",
+        "reflect",
+    ]
+    return t("add_word.start_prompt", example=random.choice(examples))
+
+
+async def _delete_user_message_safe(message: Message) -> None:
+    if not message.from_user or message.from_user.is_bot:
+        return
+    try:
+        await message.delete()
+    except TelegramBadRequest:
+        pass
+
+
+async def _delete_message_id_safe(message: Message, message_id: int | None) -> None:
+    if not message_id:
+        return
+    try:
+        await message.bot.delete_message(chat_id=message.chat.id, message_id=message_id)
+    except TelegramBadRequest:
+        pass
+
+
+async def _clear_flow_message(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    flow_message_id = data.get(FLOW_MESSAGE_ID_KEY)
+    if isinstance(flow_message_id, int):
+        await _delete_message_id_safe(message, flow_message_id)
+        await state.update_data(**{FLOW_MESSAGE_ID_KEY: None})
+
+
+async def _upsert_flow_message(
+    message: Message,
+    state: FSMContext,
+    *,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = None,
+) -> None:
+    data = await state.get_data()
+    flow_message_id = data.get(FLOW_MESSAGE_ID_KEY)
+    if isinstance(flow_message_id, int):
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=flow_message_id,
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+            return
+        except TelegramBadRequest as exc:
+            error_text = str(exc).lower()
+            if "message is not modified" in error_text:
+                return
+            if "message to edit not found" not in error_text and "message can't be edited" not in error_text:
+                raise
+
+    sent = await message.answer(
+        text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+    )
+    await state.update_data(**{FLOW_MESSAGE_ID_KEY: sent.message_id})
+
+
 async def _finalize_word(message: Message, user_id: int, state: FSMContext) -> None:
     data = await state.get_data()
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, user_id)
         if not user:
+            await _clear_flow_message(message, state)
             await message.answer(t("common.start_required"))
             await state.clear()
             return
@@ -87,26 +163,39 @@ async def _finalize_word(message: Message, user_id: int, state: FSMContext) -> N
                 pos=None,
             )
         except IntegrityError:
-            await message.answer(
-                t("add_word.word_duplicate")
-            )
+            await _clear_flow_message(message, state)
+            await message.answer(t("add_word.word_duplicate"))
             await state.clear()
             return
         except Exception:
-            await message.answer(
-                t("add_word.save_error")
-            )
+            await _clear_flow_message(message, state)
+            await message.answer(t("add_word.save_error"))
             await state.clear()
             return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, user_id)
         streak = user.current_streak if user else 0
+    await _clear_flow_message(message, state)
+    safe_word = html.escape(str(data.get("word", "")))
+    safe_translation = html.escape(str(data.get("translation", "")))
+    result_text = t(
+        "add_word.save_success_card",
+        word=safe_word,
+        translation=safe_translation,
+    )
+    example = data.get("example")
+    if example:
+        result_text += "\n" + t(
+            "add_word.save_success_example_line",
+            example=html.escape(str(example)),
+        )
     await message.answer(
-        t("add_word.save_success"),
+        result_text,
         reply_markup=main_menu_kb(
-            is_admin=message.from_user.id in settings.admin_user_ids, streak=streak
+            is_admin=user_id in settings.admin_user_ids, streak=streak
         ),
+        parse_mode="HTML",
     )
     await state.clear()
 
@@ -119,17 +208,14 @@ async def start_add_word(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 async def start_add_word_message(message: Message, state: FSMContext) -> None:
+    await _clear_flow_message(message, state)
     await state.clear()
     await state.set_state(AddWordStates.word)
-    examples = _WORD_EXAMPLES or [
-        "abandon",
-        "curious",
-        "improve",
-        "journey",
-        "reflect",
-    ]
-    await message.answer(
-        t("add_word.start_prompt", example=random.choice(examples))
+    await _delete_user_message_safe(message)
+    await _upsert_flow_message(
+        message,
+        state,
+        text=_start_prompt_text(),
     )
 
 
@@ -152,19 +238,27 @@ _WORD_EXAMPLES = _load_examples()
 
 @router.message(AddWordStates.word)
 async def add_word_word(message: Message, state: FSMContext) -> None:
-    word = message.text.strip()
+    word = (message.text or "").strip()
+    await _delete_user_message_safe(message)
     if not word:
-        await message.answer(t("add_word.word_empty"))
+        await _upsert_flow_message(
+            message,
+            state,
+            text=f"{t('add_word.word_empty')}\n\n{_start_prompt_text()}",
+        )
         return
     if contains_bad_words(word):
-        await message.answer(
-            t("add_word.word_rejected")
+        await _upsert_flow_message(
+            message,
+            state,
+            text=f"{t('add_word.word_rejected')}\n\n{_start_prompt_text()}",
         )
         return
 
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
         if not user:
+            await _clear_flow_message(message, state)
             await message.answer(t("common.start_required"))
             await state.clear()
             return
@@ -180,6 +274,7 @@ async def add_word_word(message: Message, state: FSMContext) -> None:
                 lines.append(t("add_word.example_line", example=existing.example))
             if existing.pos:
                 lines.append(t("add_word.pos_line", pos=existing.pos))
+            await _clear_flow_message(message, state)
             await message.answer(
                 "\n".join(lines),
                 reply_markup=main_menu_kb(
@@ -200,8 +295,10 @@ async def add_word_word(message: Message, state: FSMContext) -> None:
     ):
         await state.update_data(suggested_translation=None)
         await state.set_state(AddWordStates.translation_suggest)
-        await message.answer(
-            t("add_word.translation_disabled")
+        await _upsert_flow_message(
+            message,
+            state,
+            text=t("add_word.translation_disabled"),
         )
         return
     normalized = " ".join(word.lower().split())
@@ -222,32 +319,47 @@ async def add_word_word(message: Message, state: FSMContext) -> None:
     await state.update_data(suggested_translation=suggestion)
     await state.set_state(AddWordStates.translation_suggest)
     if suggestion:
-        await message.answer(
-            t("add_word.translation_found", word=word, suggestion=suggestion),
+        safe_word = html.escape(word)
+        safe_suggestion = html.escape(suggestion)
+        await _upsert_flow_message(
+            message,
+            state,
+            text=t("add_word.translation_found", word=safe_word, suggestion=safe_suggestion),
             reply_markup=translation_kb(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     else:
-        await message.answer(
-            t("add_word.translation_missing")
+        await _upsert_flow_message(
+            message,
+            state,
+            text=t("add_word.translation_missing"),
         )
 
 
 @router.message(AddWordStates.translation_suggest)
 async def add_word_translation_message(message: Message, state: FSMContext) -> None:
-    translation = message.text.strip()
+    translation = (message.text or "").strip()
+    await _delete_user_message_safe(message)
     if not translation:
-        await message.answer(t("add_word.translation_empty"))
+        await _upsert_flow_message(
+            message,
+            state,
+            text=f"{t('add_word.translation_empty')}\n\n{t('add_word.translation_disabled')}",
+        )
         return
     if contains_bad_words(translation):
-        await message.answer(
-            t("add_word.translation_rejected")
+        await _upsert_flow_message(
+            message,
+            state,
+            text=f"{t('add_word.translation_rejected')}\n\n{t('add_word.translation_disabled')}",
         )
         return
     await state.update_data(translation=translation)
     await state.set_state(AddWordStates.example)
-    await message.answer(
-        t("add_word.example_prompt"),
+    await _upsert_flow_message(
+        message,
+        state,
+        text=t("add_word.example_prompt"),
         reply_markup=example_skip_kb(),
     )
 
@@ -256,17 +368,20 @@ async def add_word_translation_message(message: Message, state: FSMContext) -> N
 async def add_word_translation_accept(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     suggestion = data.get("suggested_translation")
-    await callback.message.edit_reply_markup(reply_markup=None)
     if not suggestion or contains_bad_words(suggestion):
-        await callback.message.answer(
-            t("add_word.translation_not_found")
+        await _upsert_flow_message(
+            callback.message,
+            state,
+            text=t("add_word.translation_not_found"),
         )
         await callback.answer()
         return
     await state.update_data(translation=suggestion)
     await state.set_state(AddWordStates.example)
-    await callback.message.answer(
-        t("add_word.example_prompt"),
+    await _upsert_flow_message(
+        callback.message,
+        state,
+        text=t("add_word.example_prompt"),
         reply_markup=example_skip_kb(),
     )
     await callback.answer()
@@ -274,20 +389,22 @@ async def add_word_translation_accept(callback: CallbackQuery, state: FSMContext
 
 @router.callback_query(F.data == "translation:retry")
 async def add_word_translation_retry(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_reply_markup(reply_markup=None)
     data = await state.get_data()
     word = data.get("word", "")
     async with AsyncSessionLocal() as session:
         user = await get_user_by_telegram_id(session, callback.from_user.id)
         if not user:
+            await _clear_flow_message(callback.message, state)
             await callback.message.answer(t("common.start_required"))
             await state.clear()
             await callback.answer()
             return
         user_settings = await get_or_create_user_settings(session, user)
     if not user_settings.translation_enabled or not user_settings.auto_translation_suggest:
-        await callback.message.answer(
-            t("add_word.translation_disabled")
+        await _upsert_flow_message(
+            callback.message,
+            state,
+            text=t("add_word.translation_disabled"),
         )
         await callback.answer()
         return
@@ -300,24 +417,34 @@ async def add_word_translation_retry(callback: CallbackQuery, state: FSMContext)
             await save_translation(session, word, normalized, "en", "uz", suggestion)
     await state.update_data(suggested_translation=suggestion)
     if suggestion:
-        await callback.message.answer(
-            t("add_word.translation_retry", word=word, suggestion=suggestion),
+        safe_word = html.escape(word)
+        safe_suggestion = html.escape(suggestion)
+        await _upsert_flow_message(
+            callback.message,
+            state,
+            text=t("add_word.translation_retry", word=safe_word, suggestion=safe_suggestion),
             reply_markup=translation_kb(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     else:
-        await callback.message.answer(
-            t("add_word.translation_missing")
+        await _upsert_flow_message(
+            callback.message,
+            state,
+            text=t("add_word.translation_missing"),
         )
     await callback.answer()
 
 
 @router.message(AddWordStates.example)
 async def add_word_example(message: Message, state: FSMContext) -> None:
-    example = _normalize_optional(message.text)
+    await _delete_user_message_safe(message)
+    example = _normalize_optional(message.text or "")
     if example and contains_bad_words(example):
-        await message.answer(
-            t("add_word.example_rejected")
+        await _upsert_flow_message(
+            message,
+            state,
+            text=f"{t('add_word.example_rejected')}\n\n{t('add_word.example_prompt')}",
+            reply_markup=example_skip_kb(),
         )
         return
     await state.update_data(example=example)
@@ -326,7 +453,6 @@ async def add_word_example(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "example:skip")
 async def add_word_example_skip(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.message.edit_reply_markup(reply_markup=None)
     await state.update_data(example=None)
     await _finalize_word(callback.message, callback.from_user.id, state)
     await callback.answer()

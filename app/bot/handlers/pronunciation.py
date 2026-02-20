@@ -68,12 +68,18 @@ def _engine() -> PronunciationEngine:
     return STTPronunciationEngine(AssemblyAITranscribeSTT())
 
 
-def _single_prompt(word: str) -> str:
-    return t("pronunciation.single_prompt", word=word)
+def _single_prompt(word: str, translation: str) -> str:
+    return t("pronunciation.single_prompt", word=word, translation=translation)
 
 
-def _quiz_prompt(word: str, idx: int, total: int) -> str:
-    return t("pronunciation.quiz_prompt", word=word, index=idx, total=total)
+def _quiz_prompt(word: str, translation: str, idx: int, total: int) -> str:
+    return t(
+        "pronunciation.quiz_prompt",
+        word=word,
+        translation=translation,
+        index=idx,
+        total=total,
+    )
 
 
 def _verdict_text(verdict: str) -> str:
@@ -114,7 +120,7 @@ def _build_pronunciation_questions(words: list[object], max_questions: int = 10)
         return []
     count = min(len(words), max_questions)
     sample = random.sample(words, count)
-    return [{"word_id": w.id, "word": w.word} for w in sample]
+    return [{"word_id": w.id, "word": w.word, "translation": w.translation} for w in sample]
 
 
 def _normalize_transcript(text: str) -> str:
@@ -146,11 +152,13 @@ async def _start_pron_quiz(
     )
     first = questions[0]
     await message.edit_text(
-        _quiz_prompt(first["word"], 1, total), reply_markup=quiz_kb(), parse_mode="Markdown"
+        _quiz_prompt(first["word"], str(first.get("translation") or ""), 1, total),
+        reply_markup=quiz_kb(),
     )
     await state.update_data(
         current_word_id=first["word_id"],
         reference=first["word"],
+        reference_translation=str(first.get("translation") or ""),
         pron_message_id=message.message_id,
     )
 
@@ -438,12 +446,14 @@ async def pron_pick_word(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(
         word_id=word_id_int,
         reference=word.word,
+        reference_translation=word.translation,
         context=context,
         page=page_int,
         pron_message_id=callback.message.message_id,
     )
     await callback.message.edit_text(
-        _single_prompt(word.word), reply_markup=single_word_kb(context, page_int), parse_mode="Markdown"
+        _single_prompt(word.word, word.translation),
+        reply_markup=single_word_kb(context, page_int),
     )
     await callback.answer()
 
@@ -483,9 +493,11 @@ async def pron_retry(callback: CallbackQuery, state: FSMContext) -> None:
     _, _, context, page = callback.data.split(":")
     data = await state.get_data()
     reference = data.get("reference")
+    reference_translation = str(data.get("reference_translation") or "")
     if reference:
         await callback.message.edit_text(
-            _single_prompt(reference), reply_markup=single_word_kb(context, int(page)), parse_mode="Markdown"
+            _single_prompt(reference, reference_translation),
+            reply_markup=single_word_kb(context, int(page)),
         )
     await callback.answer()
 
@@ -493,18 +505,23 @@ async def pron_retry(callback: CallbackQuery, state: FSMContext) -> None:
 async def _handle_single_voice(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     reference = data.get("reference")
+    reference_translation = str(data.get("reference_translation") or "")
     context = data.get("context", "recent")
     page = int(data.get("page", 0))
     if not reference:
         await _edit_session_message(message, state, t("pronunciation.word_not_found_retry"))
         return
-    await _edit_session_message(message, state, t("pronunciation.checking"))
+    await _edit_session_message(
+        message,
+        state,
+        f"{t('pronunciation.checking')}\n\n{_single_prompt(reference, reference_translation)}",
+    )
     result = await _process_voice(
         message,
         state,
         message.from_user.id,
         reference,
-        retry_prompt=_single_prompt(reference),
+        retry_prompt=_single_prompt(reference, reference_translation),
         retry_markup=single_word_kb(context, page),
     )
     if not result:
@@ -615,11 +632,18 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
     if not questions or idx >= len(questions):
         return
     reference = data.get("reference")
+    reference_translation = str(data.get("reference_translation") or "")
+    if not reference_translation and idx < len(questions):
+        reference_translation = str(questions[idx].get("translation") or "")
     if not reference:
         await _edit_session_message(message, state, t("pronunciation.word_not_found_retry_quiz"))
         return
-    await _edit_session_message(message, state, t("pronunciation.scoring"))
-    retry_prompt = _quiz_prompt(reference, idx + 1, len(questions))
+    await _edit_session_message(
+        message,
+        state,
+        f"{t('pronunciation.scoring')}\n\n{_quiz_prompt(reference, reference_translation, idx + 1, len(questions))}",
+    )
+    retry_prompt = _quiz_prompt(reference, reference_translation, idx + 1, len(questions))
     result = await _process_voice(
         message,
         state,
@@ -696,13 +720,13 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         wrong=wrong,
         current_word_id=next_question["word_id"],
         reference=next_question["word"],
+        reference_translation=str(next_question.get("translation") or ""),
     )
     await _edit_session_message(
         message,
         state,
-        f"{feedback}\n\n{_quiz_prompt(next_question['word'], next_idx + 1, total)}",
+        f"{feedback}\n\n{_quiz_prompt(next_question['word'], str(next_question.get('translation') or ''), next_idx + 1, total)}",
         reply_markup=quiz_kb(),
-        parse_mode="Markdown",
     )
 
 

@@ -12,6 +12,7 @@ from app.bot.handlers.admin.packages import router as packages_router
 from app.bot.handlers.admin.contact import router as contact_router
 from app.bot.handlers.admin.admins import router as admins_router
 from app.bot.handlers.admin.settings import router as settings_router
+from app.bot.handlers.admin.level_test import router as level_test_router
 
 __all__ = [
     "entry_router",
@@ -28,4 +29,5 @@ __all__ = [
     "contact_router",
     "admins_router",
     "settings_router",
+    "level_test_router",
 ]

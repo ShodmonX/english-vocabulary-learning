@@ -7,7 +7,10 @@ def manage_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=b("manage.search"), callback_data="manage:search")],
-            [InlineKeyboardButton(text=b("manage.recent"), callback_data="manage:recent")],
+            [
+                InlineKeyboardButton(text=b("manage.recent"), callback_data="manage:recent"),
+                InlineKeyboardButton(text=b("manage.word_review"), callback_data="manage:word_review"),
+            ],
         ]
     )
 

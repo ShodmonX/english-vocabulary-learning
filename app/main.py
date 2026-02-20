@@ -10,6 +10,7 @@ from app.bot.handlers import (
     admin,
     help,
     leaderboard,
+    level_test,
     manage_words,
     menu,
     practice,
@@ -21,6 +22,7 @@ from app.bot.handlers import (
     stats,
     profile,
     word_selection,
+    word_review,
 )
 from app.bot.middlewares.blocked import BlockedUserMiddleware
 from app.bot.middlewares.ignore_not_modified import IgnoreNotModifiedMiddleware
@@ -88,6 +90,7 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(admin.contact_router)
     dp.include_router(admin.admins_router)
     dp.include_router(admin.settings_router)
+    dp.include_router(admin.level_test_router)
     dp.include_router(help.router)
     dp.include_router(leaderboard.entry_router)
     dp.include_router(leaderboard.menu_router)
@@ -96,6 +99,8 @@ def setup_dispatcher() -> Dispatcher:
     dp.include_router(leaderboard.words_router)
     dp.include_router(start.router)
     dp.include_router(menu.router)
+    dp.include_router(level_test.router)
+    dp.include_router(word_review.router)
     dp.include_router(manage_words.router)
     dp.include_router(pronunciation.router)
     dp.include_router(pronunciation_text.router)
