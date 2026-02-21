@@ -29,9 +29,9 @@ word_review:
 
 level_test:
   start: "▶️ Boshlash"
-  quick: "⚡ Tez test (30 savol)"
-  full: "🎯 Full test"
-  about: "ℹ️ Nima bu?"
+  quick: "⚡ Tez test"
+  full: "🎯 Level test"
+  start_stage: "▶️ {level} bosqichni boshlash"
   retry: "🔁 Qayta urinib ko‘rish"
   back: "◀️ Back"
   next: "⏭ Next"
@@ -70,6 +70,8 @@ admin:
   level_test_questions: "🧪 Level test savollari"
   admins: "👥 Adminlar"
   global_limit: "⚙️ Global limit"
+  full_test_charge: "💳 Level test narxi"
+  test_limits: "🧪 Test sozlamalari"
   db_management: "🗄 DB boshqaruvi"
   features: "⚙️ Funksiyalar"
   maintenance: "🧪 Texnik/Debug"
@@ -78,6 +80,9 @@ admin:
 admin_level_test:
   import_json: "📥 JSON import"
   add_manual: "✍️ Qo‘lda qo‘shish"
+  skip: "⏭ O‘tkazish"
+  active_yes: "✅ Aktiv"
+  active_no: "🚫 Noaktiv"
 
 admin_admins:
   add: "➕ Admin qo‘shish"
@@ -88,6 +93,10 @@ admin_admins:
 
 admin_settings:
   edit: "✏️ O‘zgartirish"
+  quick_count: "⚡ Tez test savollari"
+  quick_time: "⚡ Tez test vaqti"
+  full_count: "🎯 Level test savollari"
+  full_time: "🎯 Level test vaqti"
 
 admin_credits:
   add_id: "➕ ID orqali kredit"

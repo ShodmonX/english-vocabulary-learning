@@ -47,14 +47,15 @@ payments:
   success: "To‘lov qabul qilindi. {seconds} sekund TOPUP kreditingizga qo‘shildi."
 
 level_test:
+  name_quick: "Tez test"
+  name_full: "Level test"
   title: "🧪 CEFR Level Test"
   start: |
     🧪 CEFR Level Test
 
     Mavjud rejimlar:
-    - ⚡ Tez test (placement)
-    - 🎯 Full test (quick testdan keyin ochiladi)
-    30 ta savol, vaqt limiti: 15 daqiqa.
+    - ⚡ Tez test
+    - 🎯 Full test
   about: |
     ℹ️ Bu test sizning CEFR bo‘yicha taxminiy darajangizni ko‘rsatadi.
 
@@ -66,9 +67,16 @@ level_test:
     - 30 savol (MCQ + typing)
     - 15 daqiqa hard-stop
   not_enough_questions: "⚠️ Test bankida savollar yetarli emas. Admin savollarni to‘ldirgandan keyin qayta urinib ko‘ring."
+  unavailable_full: "⚠️ Hozircha level test mavjud emas."
   full_requires_quick_redirect: "ℹ️ Avval kamida 1 ta tez testni tugatish kerak. Siz avtomatik tez testga yo‘naltirildingiz."
   full_start_from_level: "ℹ️ Full test {level} bosqichidan boshlandi."
-  header: "🧪 Level Test ({total} savol / {minutes} min)"
+  promo_next_stage: "🎉 Tabriklaymiz! Siz keyingi ({next_level}) bosqichga yo‘naltirildingiz."
+  credit_not_enough: "⚠️ Kredit yetarli emas."
+  paid_blocked: |
+    {detail}
+
+    Siz {next_date} da keyingi tekin imtihonni topshira olasiz. Omad!
+  header: "🧪 {test_name} ({total} savol / {minutes} min)"
   progress: "Savol {index}/{total} | 📝{answered} ⏭{skipped} 🚩{flagged} | ⏳ {time_left}"
   time_left: "⏳ {time_left}"
   typing_hint: "✍️ Javobni matn ko‘rinishida yuboring (1-2 so‘z)."
@@ -81,17 +89,13 @@ level_test:
   status_cancelled: "Stopped by user"
   status_unknown: "Completed"
   summary: |
-    📌 Level Test yakuni ({status})
+    📌 {test_name} yakuni ({status})
 
-    Natija: {correct}/{total} ({score_pct}%)
-    Estimated level (grammar/vocab): {level}
-    Confidence: {confidence}
-
+    Natija: {score_pct}%
+    To‘g‘ri javoblar: {correct}
     Javob berilgan: {answered}/{total}
-    O‘tkazilgan: {skipped}
-    Flag qolgan: {flagged}
+    Taxminiy daraja: {level}
     Sarflangan vaqt: {elapsed}
-  correct_questions_line: "✅ To‘g‘ri javob berilgan savollar: {questions}"
   no_active: "Faol level test topilmadi."
   question_changed: "Savol allaqachon yangilangan."
 
@@ -394,6 +398,30 @@ admin_settings:
   basic_limit_invalid: "⚠️ Noto‘g‘ri qiymat. Faqat musbat son yuboring."
   basic_limit_confirm: "Oylik BASIC limitni {old}s dan {new}s ga o‘zgartirasizmi?"
   basic_limit_updated: "✅ Oylik BASIC limit yangilandi: {new}s"
+  full_test_charge_body: "Hozirgi Full test narxi: {value}s"
+  full_test_charge_prompt: "Yangi Full test narxini sekundda yuboring (faqat son):"
+  full_test_charge_invalid: "⚠️ Noto‘g‘ri qiymat. Faqat musbat son yuboring."
+  full_test_charge_confirm: "Full test narxini {old}s dan {new}s ga o‘zgartirasizmi?"
+  full_test_charge_updated: "✅ Full test narxi yangilandi: {new}s"
+  test_limits_body: |
+    🧪 Test sozlamalari
+
+    ⚡ Tez test:
+    - Savollar soni: {quick_count}
+    - Vaqt: {quick_time}s
+
+    🎯 Level test:
+    - Savollar soni: {full_count}
+    - Vaqt: {full_time}s
+  test_limits_prompt: "{label} uchun yangi qiymatni yuboring (faqat son):"
+  test_limits_invalid_count: "⚠️ Savollar soni {min}..{max} oralig‘ida bo‘lishi kerak."
+  test_limits_invalid_time: "⚠️ Vaqt {min}..{max} sekund oralig‘ida bo‘lishi kerak."
+  test_limits_confirm: "{label} ni {old} dan {new} ga o‘zgartirasizmi?"
+  test_limits_updated: "✅ {label} yangilandi: {new}"
+  label_quick_count: "Tez test savollar soni"
+  label_quick_time: "Tez test vaqti (sekund)"
+  label_full_count: "Level test savollar soni"
+  label_full_time: "Level test vaqti (sekund)"
 
 admin_credits:
   menu: "💳 Kreditlar bo‘limi:"
@@ -573,11 +601,11 @@ admin_level_test:
   import_done: "✅ Import tugadi. Jami: {total}, qo‘shildi: {inserted}, duplicate o‘tkazildi: {skipped}"
   file_error: "⚠️ Faylni o‘qib bo‘lmadi. UTF-8 `.json` fayl yuboring."
   file_too_large: "⚠️ Fayl juda katta (max 1 MB)."
-  manual_level_tag_prompt: "Level kiriting: A1, A2, B1, B2, C1 yoki C2."
+  manual_level_tag_prompt: "Levelni tanlang:"
   manual_level_tag_invalid: "❗ Noto‘g‘ri level. Faqat A1/A2/B1/B2/C1/C2."
-  manual_difficulty_prompt: "Difficulty kiriting (1..5):"
+  manual_difficulty_prompt: "Difficulty ni tanlang (1..5):"
   manual_difficulty_invalid: "❗ Difficulty 1..5 oralig‘ida bo‘lishi kerak."
-  manual_type_prompt: "Type kiriting: MCQ yoki TYPING."
+  manual_type_prompt: "Savol turini tanlang: MCQ yoki TYPING."
   manual_type_invalid: "❗ Type faqat MCQ yoki TYPING bo‘lishi mumkin."
   manual_prompt_prompt: "Savol matnini kiriting (prompt):"
   manual_prompt_invalid: "❗ Prompt bo‘sh bo‘lmasin."
@@ -586,12 +614,26 @@ admin_level_test:
   manual_correct_answer_prompt: "To‘g‘ri javobni kiriting:"
   manual_correct_answer_invalid: "❗ To‘g‘ri javob bo‘sh bo‘lmasin."
   manual_correct_answer_not_in_choices: "❗ To‘g‘ri javob MCQ variantlaridan biri bo‘lishi kerak."
-  manual_accepted_answers_prompt: "Typing accepted variantlarni kiriting (`|` bilan). Yo‘q bo‘lsa `-` yuboring."
-  manual_explanation_prompt: "Izoh kiriting (ixtiyoriy). O‘tkazish uchun `-` yuboring."
-  manual_is_active_prompt: "Aktiv holat kiriting: ha/yo‘q (yes/no)."
-  manual_is_active_invalid: "❗ Aktiv holat uchun ha/yo‘q (yes/no) yuboring."
+  manual_accepted_answers_prompt: "Typing accepted variantlarni kiriting (`|` bilan) yoki ⏭ O‘tkazish tugmasini bosing."
+  manual_explanation_prompt: "Izoh kiriting (ixtiyoriy) yoki ⏭ O‘tkazish tugmasini bosing."
+  manual_is_active_prompt: "Aktiv holatni tanlang:"
+  manual_is_active_invalid: "❗ Aktiv holatni inline tugma orqali tanlang."
   manual_duplicate: "⚠️ Shu turdagi prompt allaqachon bor, duplicate qo‘shilmadi."
   manual_saved: "✅ Savol saqlandi."
+  manual_saved_detail: |
+    ✅ Savol bazaga qo‘shildi.
+
+    🆔 ID: {question_id}
+    🏷 Level: {level_tag}
+    🎚 Difficulty: {difficulty}
+    🧩 Type: {question_type}
+    ⚙️ Holat: {status}
+
+    ❓ Prompt: {prompt}
+    ✅ To‘g‘ri javob: {correct_answer}
+    🧱 Variantlar (MCQ): {choices}
+    ✍️ Qabul qilinadiganlar (TYPING): {accepted_answers}
+    💡 Izoh: {explanation}
 
 stt:
   unavailable: "Hozir talaffuz tekshiruvi mavjud emas. Iltimos, keyinroq yana urinib ko‘ring."
@@ -841,7 +883,7 @@ add_word:
   save_success_card: |
     ✅ Zo‘r! So‘z bazaga qo‘shildi.
     🔤 <b>So‘z:</b> {word}
-    🌍 <b>Tarjima:</b> <code>{translation}</code>
+    🌍 <b>Tarjima:</b> {translation}
   save_success_example_line: "📝 <b>Misol:</b> {example}"
   save_success: "✅ Zo‘r! So‘z bazaga qo‘shildi. Endi uni mashqda ko‘ramiz 💪"
   word_duplicate: "🙂 Bu so‘z allaqachon mavjud. Yana bir bor tekshirib ko‘ring."

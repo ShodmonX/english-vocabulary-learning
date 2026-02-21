@@ -25,6 +25,7 @@ from app.bot.handlers import (
     word_review,
 )
 from app.bot.middlewares.blocked import BlockedUserMiddleware
+from app.bot.middlewares.admin_cleanup import AdminCleanupMiddleware
 from app.bot.middlewares.ignore_not_modified import IgnoreNotModifiedMiddleware
 from app.config import settings as app_settings
 from app.db.session import AsyncSessionLocal
@@ -76,6 +77,7 @@ def setup_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
     dp.update.middleware(BlockedUserMiddleware())
     dp.update.middleware(IgnoreNotModifiedMiddleware())
+    dp.update.middleware(AdminCleanupMiddleware())
     dp.include_router(admin.entry_router)
     dp.include_router(admin.menu_router)
     dp.include_router(admin.stats_router)

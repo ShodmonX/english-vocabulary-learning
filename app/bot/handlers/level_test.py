@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
@@ -7,7 +10,6 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.level_test_states import LevelTestStates
 from app.bot.keyboards.level_test import (
-    level_test_about_kb,
     level_test_entry_kb,
     level_test_question_kb,
     level_test_stop_confirm_kb,
@@ -15,12 +17,45 @@ from app.bot.keyboards.level_test import (
 )
 from app.bot.keyboards.main import main_menu_kb
 from app.config import settings
+from app.db.repo.app_settings import get_full_test_charge_seconds
+from app.db.repo.credits import CreditError, refund_charge, reserve_credits
 from app.db.repo.users import get_or_create_user
 from app.db.session import AsyncSessionLocal
 from app.services import level_test as level_test_service
 from app.services.i18n import t
 
 router = Router()
+
+
+def _test_name(mode: str) -> str:
+    if level_test_service.is_full_mode(mode):
+        return t("level_test.name_full")
+    return t("level_test.name_quick")
+
+
+def _format_local_datetime(utc_dt) -> str:
+    tz = ZoneInfo(settings.timezone)
+    return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz).strftime("%Y-%m-%d %H:%M")
+
+
+async def _current_full_test_charge_seconds(session) -> int:
+    value = await get_full_test_charge_seconds(session)
+    if value and value > 0:
+        return int(value)
+    return int(settings.full_test_charge_seconds)
+
+
+def _next_stage_after_attempt(attempt) -> str | None:
+    if not level_test_service.is_full_stage_passed(
+        mode=attempt.mode,
+        status=attempt.status,
+        score_pct=attempt.score_pct,
+    ):
+        return None
+    stage = level_test_service.full_stage_from_mode(attempt.mode)
+    if not stage:
+        return None
+    return level_test_service.next_stage(stage)
 
 
 def _status_label(status: str) -> str:
@@ -47,7 +82,7 @@ def _elapsed_seconds(attempt) -> int:
     else:
         end_time = attempt.updated_at or level_test_service.utcnow()
     elapsed = int((end_time - attempt.started_at).total_seconds())
-    return max(0, min(elapsed, level_test_service.time_limit_for_mode(attempt.mode)))
+    return max(0, min(elapsed, level_test_service.attempt_time_limit_seconds(attempt)))
 
 
 def _question_text(snapshot: level_test_service.AttemptSnapshot, note: str | None = None) -> str:
@@ -56,8 +91,9 @@ def _question_text(snapshot: level_test_service.AttemptSnapshot, note: str | Non
         return t("level_test.no_active")
     header = t(
         "level_test.header",
+        test_name=_test_name(snapshot.attempt.mode),
         total=snapshot.total_questions,
-        minutes=level_test_service.time_limit_for_mode(snapshot.attempt.mode) // 60,
+        minutes=max(1, level_test_service.attempt_time_limit_seconds(snapshot.attempt) // 60),
     )
     progress = t(
         "level_test.progress",
@@ -88,30 +124,23 @@ def _summary_text(snapshot: level_test_service.AttemptSnapshot) -> str:
     attempt = snapshot.attempt
     summary = t(
         "level_test.summary",
+        test_name=_test_name(attempt.mode),
         status=_status_label(attempt.status),
-        correct=attempt.correct_count,
-        total=snapshot.total_questions,
         score_pct=_score_text(attempt.score_pct),
-        level=attempt.level_estimate or "A1",
-        confidence=(attempt.confidence or "low"),
+        correct=attempt.correct_count,
         answered=attempt.answered_count,
-        skipped=attempt.skipped_count,
-        flagged=attempt.flagged_count,
+        total=snapshot.total_questions,
+        level=attempt.level_estimate or "A1",
         elapsed=level_test_service.format_mmss(_elapsed_seconds(attempt)),
     )
-    if (
-        attempt.status == level_test_service.STATUS_FINISHED
-        and attempt.answered_count >= snapshot.total_questions
-    ):
-        if snapshot.correct_indexes:
-            correct_list = ", ".join(str(index) for index in snapshot.correct_indexes)
-        else:
-            correct_list = t("common.none")
-        summary += "\n" + t(
-            "level_test.correct_questions_line",
-            questions=correct_list,
-        )
+    next_stage = _next_stage_after_attempt(attempt)
+    if next_stage:
+        summary += "\n\n" + t("level_test.promo_next_stage", next_level=next_stage)
     return summary
+
+
+def _summary_markup(snapshot: level_test_service.AttemptSnapshot):
+    return level_test_summary_kb(next_stage=_next_stage_after_attempt(snapshot.attempt))
 
 
 def _question_markup(snapshot: level_test_service.AttemptSnapshot):
@@ -153,7 +182,7 @@ async def _edit_attempt_message_from_text(
         reply_markup = _question_markup(snapshot)
     else:
         text = _summary_text(snapshot)
-        reply_markup = level_test_summary_kb()
+        reply_markup = _summary_markup(snapshot)
     chat_id = snapshot.attempt.chat_id
     message_id = snapshot.attempt.message_id
     if chat_id and message_id:
@@ -187,7 +216,7 @@ async def _render_snapshot_in_callback_message(
     await _edit_message_safe(
         callback_message,
         text=_summary_text(snapshot),
-        reply_markup=level_test_summary_kb(),
+        reply_markup=_summary_markup(snapshot),
     )
 
 
@@ -199,6 +228,110 @@ async def open_level_test_menu_message(message: Message, state: FSMContext) -> N
     )
 
 
+async def _start_full_with_policy(
+    *,
+    callback: CallbackQuery,
+    state: FSMContext,
+    forced_stage: str | None = None,
+) -> None:
+    note: str | None = None
+    snapshot = None
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id, callback.from_user.username)
+        active_snapshot = await level_test_service.get_active_snapshot(session, user.id)
+        if active_snapshot and active_snapshot.attempt.status == level_test_service.STATUS_ACTIVE:
+            snapshot = active_snapshot
+        else:
+            quick_attempt = await level_test_service.get_latest_finished_placement_estimate(
+                session,
+                user_id=user.id,
+            )
+            if not quick_attempt or not quick_attempt.level_estimate:
+                note = t("level_test.full_requires_quick_redirect")
+                try:
+                    attempt = await level_test_service.start_or_resume_placement_attempt(
+                        session,
+                        user_id=user.id,
+                        chat_id=callback.message.chat.id,
+                        message_id=callback.message.message_id,
+                    )
+                except level_test_service.QuestionBankError:
+                    await _edit_message_safe(
+                        callback.message,
+                        text=t("level_test.not_enough_questions"),
+                        reply_markup=level_test_entry_kb(),
+                    )
+                    await callback.answer()
+                    return
+                snapshot = await level_test_service.get_snapshot_by_attempt_id(session, attempt.id)
+            else:
+                decision = await level_test_service.evaluate_full_access(
+                    session,
+                    user_id=user.id,
+                    quick_level_tag=quick_attempt.level_estimate,
+                )
+                start_stage = decision.start_level
+                if forced_stage:
+                    requested_stage = level_test_service.normalize_level_tag(forced_stage)
+                    if requested_stage == decision.start_level:
+                        start_stage = requested_stage
+                reservation = None
+                charge_seconds = await _current_full_test_charge_seconds(session)
+                if not decision.free_available:
+                    try:
+                        reservation = await reserve_credits(
+                            session,
+                            user.id,
+                            charge_seconds,
+                            provider="level_test_full",
+                        )
+                    except CreditError as exc:
+                        await _edit_message_safe(
+                            callback.message,
+                            text=t(
+                                "level_test.paid_blocked",
+                                detail=exc.user_message or t("level_test.credit_not_enough"),
+                                next_date=_format_local_datetime(decision.next_free_at_utc),
+                            ),
+                            reply_markup=level_test_entry_kb(),
+                        )
+                        await callback.answer()
+                        return
+                try:
+                    attempt = await level_test_service.start_or_resume_full_attempt(
+                        session,
+                        user_id=user.id,
+                        chat_id=callback.message.chat.id,
+                        message_id=callback.message.message_id,
+                        start_level_tag=start_stage,
+                    )
+                except level_test_service.QuestionBankError:
+                    if reservation:
+                        await refund_charge(
+                            session,
+                            reservation.ledger_id,
+                            reason="level_test_full_unavailable",
+                        )
+                    await _edit_message_safe(
+                        callback.message,
+                        text=t("level_test.unavailable_full"),
+                        reply_markup=level_test_entry_kb(),
+                    )
+                    await callback.answer()
+                    return
+                snapshot = await level_test_service.get_snapshot_by_attempt_id(session, attempt.id)
+
+    if not snapshot:
+        await callback.answer(t("level_test.no_active"), show_alert=True)
+        return
+    if snapshot.attempt.status == level_test_service.STATUS_ACTIVE:
+        await state.set_state(LevelTestStates.in_attempt)
+    else:
+        await state.clear()
+    await _render_snapshot_in_callback_message(callback.message, snapshot, note=note)
+    await callback.answer()
+
+
 @router.callback_query(F.data == "lt:menu")
 async def level_test_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
@@ -206,16 +339,6 @@ async def level_test_menu(callback: CallbackQuery, state: FSMContext) -> None:
         callback.message,
         text=t("level_test.start"),
         reply_markup=level_test_entry_kb(),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "lt:about")
-async def level_test_about(callback: CallbackQuery) -> None:
-    await _edit_message_safe(
-        callback.message,
-        text=t("level_test.about"),
-        reply_markup=level_test_about_kb(),
     )
     await callback.answer()
 
@@ -268,90 +391,43 @@ async def level_test_start_quick(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "lt:start:full")
 async def level_test_start_full(callback: CallbackQuery, state: FSMContext) -> None:
-    note: str | None = None
-    async with AsyncSessionLocal() as session:
-        user = await get_or_create_user(session, callback.from_user.id, callback.from_user.username)
-        quick_attempt = await level_test_service.get_latest_finished_placement_estimate(
-            session,
-            user_id=user.id,
-        )
-        try:
-            if not quick_attempt or not quick_attempt.level_estimate:
-                note = t("level_test.full_requires_quick_redirect")
-                attempt = await level_test_service.start_or_resume_placement_attempt(
-                    session,
-                    user_id=user.id,
-                    chat_id=callback.message.chat.id,
-                    message_id=callback.message.message_id,
-                )
-            else:
-                note = t("level_test.full_start_from_level", level=quick_attempt.level_estimate)
-                attempt = await level_test_service.start_or_resume_full_attempt(
-                    session,
-                    user_id=user.id,
-                    chat_id=callback.message.chat.id,
-                    message_id=callback.message.message_id,
-                    start_level_tag=quick_attempt.level_estimate,
-                )
-        except level_test_service.QuestionBankError:
-            await _edit_message_safe(
-                callback.message,
-                text=t("level_test.not_enough_questions"),
-                reply_markup=level_test_entry_kb(),
-            )
-            await callback.answer()
-            return
-        snapshot = await level_test_service.get_snapshot_by_attempt_id(session, attempt.id)
-    if not snapshot:
-        await callback.answer(t("level_test.no_active"), show_alert=True)
+    await _start_full_with_policy(callback=callback, state=state)
+
+
+@router.callback_query(F.data.startswith("lt:next:"))
+async def level_test_next_stage(callback: CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer()
         return
-    if snapshot.attempt.status == level_test_service.STATUS_ACTIVE:
-        await state.set_state(LevelTestStates.in_attempt)
-    else:
-        await state.clear()
-    await _render_snapshot_in_callback_message(callback.message, snapshot, note=note)
-    await callback.answer()
+    next_stage = level_test_service.normalize_level_tag(parts[2])
+    await _start_full_with_policy(
+        callback=callback,
+        state=state,
+        forced_stage=next_stage,
+    )
 
 
 @router.callback_query(F.data == "lt:retry")
 async def level_test_retry(callback: CallbackQuery, state: FSMContext) -> None:
-    note: str | None = None
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, callback.from_user.id, callback.from_user.username)
         latest_attempt = await level_test_service.get_latest_completed_attempt(
             session,
             user_id=user.id,
         )
+    if latest_attempt and level_test_service.is_full_mode(latest_attempt.mode):
+        await _start_full_with_policy(callback=callback, state=state)
+        return
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_user(session, callback.from_user.id, callback.from_user.username)
         try:
-            if latest_attempt and latest_attempt.mode == level_test_service.FULL_MODE:
-                quick_attempt = await level_test_service.get_latest_finished_placement_estimate(
-                    session,
-                    user_id=user.id,
-                )
-                if quick_attempt and quick_attempt.level_estimate:
-                    note = t("level_test.full_start_from_level", level=quick_attempt.level_estimate)
-                    attempt = await level_test_service.start_or_resume_full_attempt(
-                        session,
-                        user_id=user.id,
-                        chat_id=callback.message.chat.id,
-                        message_id=callback.message.message_id,
-                        start_level_tag=quick_attempt.level_estimate,
-                    )
-                else:
-                    note = t("level_test.full_requires_quick_redirect")
-                    attempt = await level_test_service.start_or_resume_placement_attempt(
-                        session,
-                        user_id=user.id,
-                        chat_id=callback.message.chat.id,
-                        message_id=callback.message.message_id,
-                    )
-            else:
-                attempt = await level_test_service.start_or_resume_placement_attempt(
-                    session,
-                    user_id=user.id,
-                    chat_id=callback.message.chat.id,
-                    message_id=callback.message.message_id,
-                )
+            attempt = await level_test_service.start_or_resume_placement_attempt(
+                session,
+                user_id=user.id,
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+            )
         except level_test_service.QuestionBankError:
             await _edit_message_safe(
                 callback.message,
@@ -368,7 +444,7 @@ async def level_test_retry(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(LevelTestStates.in_attempt)
     else:
         await state.clear()
-    await _render_snapshot_in_callback_message(callback.message, snapshot, note=note)
+    await _render_snapshot_in_callback_message(callback.message, snapshot)
     await callback.answer()
 
 

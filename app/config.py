@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     placement_question_count: int = 30
     placement_mcq_count: int = 18
     placement_typing_count: int = 12
+    full_question_count: int = 30
+    full_time_limit_seconds: int = 900
+    full_test_charge_seconds: int = 30
 
     @field_validator("log_level")
     @classmethod

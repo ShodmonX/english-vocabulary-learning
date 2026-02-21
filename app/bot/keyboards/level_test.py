@@ -13,17 +13,6 @@ def level_test_entry_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text=b("level_test.quick"), callback_data="lt:start:quick")],
             [InlineKeyboardButton(text=b("level_test.full"), callback_data="lt:start:full")],
-            [InlineKeyboardButton(text=b("level_test.about"), callback_data="lt:about")],
-        ]
-    )
-
-
-def level_test_about_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=b("level_test.quick"), callback_data="lt:start:quick")],
-            [InlineKeyboardButton(text=b("level_test.full"), callback_data="lt:start:full")],
-            [InlineKeyboardButton(text=b("common.back"), callback_data="lt:menu")],
         ]
     )
 
@@ -39,13 +28,20 @@ def level_test_stop_confirm_kb() -> InlineKeyboardMarkup:
     )
 
 
-def level_test_summary_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=b("level_test.retry"), callback_data="lt:retry")],
-            [InlineKeyboardButton(text=b("common.back_main_menu"), callback_data="lt:menu:main")],
-        ]
-    )
+def level_test_summary_kb(next_stage: str | None = None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if next_stage:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=b("level_test.start_stage", level=next_stage),
+                    callback_data=f"lt:next:{next_stage}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text=b("level_test.retry"), callback_data="lt:retry")])
+    rows.append([InlineKeyboardButton(text=b("common.back_main_menu"), callback_data="lt:menu:main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def level_test_question_kb(

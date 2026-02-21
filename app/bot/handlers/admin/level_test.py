@@ -8,12 +8,20 @@ from dataclasses import dataclass
 from typing import Any
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.admin.common import ensure_admin_callback, ensure_admin_message
 from app.bot.handlers.admin.states import AdminStates
-from app.bot.keyboards.admin.level_test import admin_level_test_menu_kb
+from app.bot.keyboards.admin.level_test import (
+    admin_level_test_manual_active_kb,
+    admin_level_test_manual_difficulty_kb,
+    admin_level_test_manual_level_kb,
+    admin_level_test_manual_skip_kb,
+    admin_level_test_manual_type_kb,
+    admin_level_test_menu_kb,
+)
 from app.db.repo import level_test as level_test_repo
 from app.db.session import AsyncSessionLocal
 from app.services.i18n import t
@@ -23,6 +31,7 @@ router = Router()
 ALLOWED_LEVEL_TAGS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 ALLOWED_TYPES = {"MCQ", "TYPING"}
 MAX_JSON_FILE_BYTES = 1024 * 1024
+MANUAL_FLOW_MESSAGE_ID_KEY = "level_test_manual_flow_message_id"
 
 
 @dataclass(slots=True)
@@ -200,9 +209,10 @@ def _validate_question(item: dict[str, Any], index: int) -> ValidQuestionPayload
     )
 
 
-async def _save_questions(validated: list[ValidQuestionPayload]) -> tuple[int, int]:
+async def _save_questions(validated: list[ValidQuestionPayload]) -> tuple[int, int, list[int]]:
     inserted = 0
     skipped_duplicates = 0
+    inserted_ids: list[int] = []
     async with AsyncSessionLocal() as session:
         existing_keys = await level_test_repo.list_question_prompt_keys(session)
         for question in validated:
@@ -210,7 +220,7 @@ async def _save_questions(validated: list[ValidQuestionPayload]) -> tuple[int, i
             if key in existing_keys:
                 skipped_duplicates += 1
                 continue
-            await level_test_repo.create_question(
+            created = await level_test_repo.create_question(
                 session,
                 level_tag=question.level_tag,
                 difficulty=question.difficulty,
@@ -224,8 +234,9 @@ async def _save_questions(validated: list[ValidQuestionPayload]) -> tuple[int, i
             )
             existing_keys.add(key)
             inserted += 1
+            inserted_ids.append(int(created.id))
         await session.commit()
-    return inserted, skipped_duplicates
+    return inserted, skipped_duplicates, inserted_ids
 
 
 async def _process_json_payload(
@@ -263,7 +274,7 @@ async def _process_json_payload(
             )
             return
 
-    inserted, skipped_duplicates = await _save_questions(validated)
+    inserted, skipped_duplicates, _ = await _save_questions(validated)
     await state.clear()
     await message.answer(
         t(
@@ -334,183 +345,273 @@ async def admin_level_test_json_file(message: Message, state: FSMContext) -> Non
     await _process_json_payload(message, state, raw_payload=raw_payload)
 
 
-@router.callback_query(F.data == "admin:level_test:manual")
-async def admin_level_test_manual_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await ensure_admin_callback(callback):
-        return
-    await state.update_data(level_test_manual_draft={})
+async def _upsert_manual_flow_message(
+    message: Message,
+    state: FSMContext,
+    *,
+    text: str,
+    reply_markup=None,
+) -> None:
+    data = await state.get_data()
+    flow_message_id = data.get(MANUAL_FLOW_MESSAGE_ID_KEY)
+    if flow_message_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=int(flow_message_id),
+                text=text,
+                reply_markup=reply_markup,
+            )
+            return
+        except TelegramBadRequest as exc:
+            if "message is not modified" in str(exc):
+                return
+        except Exception:
+            pass
+    sent = await message.answer(text, reply_markup=reply_markup)
+    await state.update_data(**{MANUAL_FLOW_MESSAGE_ID_KEY: sent.message_id})
+
+
+async def _manual_get_draft(state: FSMContext) -> dict[str, Any]:
+    data = await state.get_data()
+    return dict(data.get("level_test_manual_draft") or {})
+
+
+async def _manual_set_draft(state: FSMContext, draft: dict[str, Any]) -> None:
+    await state.update_data(level_test_manual_draft=draft)
+
+
+async def _manual_prompt_level(message: Message, state: FSMContext) -> None:
     await state.set_state(AdminStates.level_test_manual_level_tag)
-    await callback.message.edit_text(
-        t("admin_level_test.manual_level_tag_prompt"),
-        reply_markup=admin_level_test_menu_kb(),
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_level_tag_prompt"),
+        reply_markup=admin_level_test_manual_level_kb(),
     )
-    await callback.answer()
 
 
-@router.message(AdminStates.level_test_manual_level_tag)
-async def admin_level_test_manual_level_tag(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    level_tag = (message.text or "").strip().upper()
-    if level_tag not in ALLOWED_LEVEL_TAGS:
-        await message.answer(t("admin_level_test.manual_level_tag_invalid"))
-        return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
-    draft["level_tag"] = level_tag
-    await state.update_data(level_test_manual_draft=draft)
+async def _manual_prompt_difficulty(message: Message, state: FSMContext) -> None:
     await state.set_state(AdminStates.level_test_manual_difficulty)
-    await message.answer(t("admin_level_test.manual_difficulty_prompt"))
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_difficulty_prompt"),
+        reply_markup=admin_level_test_manual_difficulty_kb(),
+    )
 
 
-@router.message(AdminStates.level_test_manual_difficulty)
-async def admin_level_test_manual_difficulty(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    try:
-        difficulty = int((message.text or "").strip())
-    except ValueError:
-        await message.answer(t("admin_level_test.manual_difficulty_invalid"))
-        return
-    if difficulty < 1 or difficulty > 5:
-        await message.answer(t("admin_level_test.manual_difficulty_invalid"))
-        return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
-    draft["difficulty"] = difficulty
-    await state.update_data(level_test_manual_draft=draft)
+async def _manual_prompt_type(message: Message, state: FSMContext) -> None:
     await state.set_state(AdminStates.level_test_manual_type)
-    await message.answer(t("admin_level_test.manual_type_prompt"))
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_type_prompt"),
+        reply_markup=admin_level_test_manual_type_kb(),
+    )
 
 
-@router.message(AdminStates.level_test_manual_type)
-async def admin_level_test_manual_type(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    question_type = (message.text or "").strip().upper()
-    if question_type not in ALLOWED_TYPES:
-        await message.answer(t("admin_level_test.manual_type_invalid"))
-        return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
-    draft["type"] = question_type
-    await state.update_data(level_test_manual_draft=draft)
+async def _manual_prompt_prompt(message: Message, state: FSMContext) -> None:
     await state.set_state(AdminStates.level_test_manual_prompt)
-    await message.answer(t("admin_level_test.manual_prompt_prompt"))
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_prompt_prompt"),
+    )
 
 
-@router.message(AdminStates.level_test_manual_prompt)
-async def admin_level_test_manual_prompt(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
+async def _manual_prompt_choices(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminStates.level_test_manual_choices)
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_choices_prompt"),
+    )
+
+
+async def _manual_prompt_correct_answer(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminStates.level_test_manual_correct_answer)
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_correct_answer_prompt"),
+    )
+
+
+async def _manual_prompt_accepted_answers(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminStates.level_test_manual_accepted_answers)
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_accepted_answers_prompt"),
+        reply_markup=admin_level_test_manual_skip_kb("admin:level_test:manual:accepted:skip"),
+    )
+
+
+async def _manual_prompt_explanation(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminStates.level_test_manual_explanation)
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_explanation_prompt"),
+        reply_markup=admin_level_test_manual_skip_kb("admin:level_test:manual:explanation:skip"),
+    )
+
+
+async def _manual_prompt_is_active(message: Message, state: FSMContext) -> None:
+    await state.set_state(AdminStates.level_test_manual_is_active)
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t("admin_level_test.manual_is_active_prompt"),
+        reply_markup=admin_level_test_manual_active_kb(),
+    )
+
+
+async def _manual_apply_level(message: Message, state: FSMContext, level_tag: str) -> None:
+    normalized = (level_tag or "").strip().upper()
+    if normalized not in ALLOWED_LEVEL_TAGS:
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_level_tag_invalid"),
+            reply_markup=admin_level_test_manual_level_kb(),
+        )
         return
-    prompt = _normalize_spaces(message.text or "")
+    draft = await _manual_get_draft(state)
+    draft["level_tag"] = normalized
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_difficulty(message, state)
+
+
+async def _manual_apply_difficulty(message: Message, state: FSMContext, raw_value: str) -> None:
+    try:
+        difficulty = int((raw_value or "").strip())
+    except ValueError:
+        difficulty = -1
+    if difficulty < 1 or difficulty > 5:
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_difficulty_invalid"),
+            reply_markup=admin_level_test_manual_difficulty_kb(),
+        )
+        return
+    draft = await _manual_get_draft(state)
+    draft["difficulty"] = difficulty
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_type(message, state)
+
+
+async def _manual_apply_type(message: Message, state: FSMContext, raw_value: str) -> None:
+    question_type = (raw_value or "").strip().upper()
+    if question_type not in ALLOWED_TYPES:
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_type_invalid"),
+            reply_markup=admin_level_test_manual_type_kb(),
+        )
+        return
+    draft = await _manual_get_draft(state)
+    draft["type"] = question_type
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_prompt(message, state)
+
+
+async def _manual_apply_prompt(message: Message, state: FSMContext, raw_value: str) -> None:
+    prompt = _normalize_spaces(raw_value or "")
     if not prompt:
-        await message.answer(t("admin_level_test.manual_prompt_invalid"))
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_prompt_invalid"),
+        )
         return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+    draft = await _manual_get_draft(state)
     draft["prompt"] = prompt
-    await state.update_data(level_test_manual_draft=draft)
+    await _manual_set_draft(state, draft)
     if draft.get("type") == "MCQ":
-        await state.set_state(AdminStates.level_test_manual_choices)
-        await message.answer(t("admin_level_test.manual_choices_prompt"))
+        await _manual_prompt_choices(message, state)
         return
-    await state.set_state(AdminStates.level_test_manual_correct_answer)
-    await message.answer(t("admin_level_test.manual_correct_answer_prompt"))
+    await _manual_prompt_correct_answer(message, state)
 
 
-@router.message(AdminStates.level_test_manual_choices)
-async def admin_level_test_manual_choices(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    choices = _split_variants(message.text or "")
+async def _manual_apply_choices(message: Message, state: FSMContext, raw_value: str) -> None:
+    choices = _split_variants(raw_value or "")
     if len(choices) != 4:
-        await message.answer(t("admin_level_test.manual_choices_invalid"))
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_choices_invalid"),
+        )
         return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+    draft = await _manual_get_draft(state)
     draft["choices"] = choices
-    await state.update_data(level_test_manual_draft=draft)
-    await state.set_state(AdminStates.level_test_manual_correct_answer)
-    await message.answer(t("admin_level_test.manual_correct_answer_prompt"))
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_correct_answer(message, state)
 
 
-@router.message(AdminStates.level_test_manual_correct_answer)
-async def admin_level_test_manual_correct_answer(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    answer = _normalize_spaces(message.text or "")
+async def _manual_apply_correct_answer(message: Message, state: FSMContext, raw_value: str) -> None:
+    answer = _normalize_spaces(raw_value or "")
     if not answer:
-        await message.answer(t("admin_level_test.manual_correct_answer_invalid"))
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_correct_answer_invalid"),
+        )
         return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+    draft = await _manual_get_draft(state)
     if draft.get("type") == "MCQ":
         choices = list(draft.get("choices") or [])
         if answer.lower() not in {choice.lower() for choice in choices}:
-            await message.answer(t("admin_level_test.manual_correct_answer_not_in_choices"))
+            await _upsert_manual_flow_message(
+                message,
+                state,
+                text=t("admin_level_test.manual_correct_answer_not_in_choices"),
+            )
             return
     draft["correct_answer"] = answer
-    await state.update_data(level_test_manual_draft=draft)
+    await _manual_set_draft(state, draft)
     if draft.get("type") == "TYPING":
-        await state.set_state(AdminStates.level_test_manual_accepted_answers)
-        await message.answer(t("admin_level_test.manual_accepted_answers_prompt"))
+        await _manual_prompt_accepted_answers(message, state)
         return
-    await state.set_state(AdminStates.level_test_manual_explanation)
-    await message.answer(t("admin_level_test.manual_explanation_prompt"))
+    await _manual_prompt_explanation(message, state)
 
 
-@router.message(AdminStates.level_test_manual_accepted_answers)
-async def admin_level_test_manual_accepted_answers(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    raw = (message.text or "").strip()
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+async def _manual_apply_accepted_answers(message: Message, state: FSMContext, raw_value: str) -> None:
+    raw = (raw_value or "").strip()
+    draft = await _manual_get_draft(state)
     accepted_answers: list[str] = []
-    if raw != "-":
+    if raw not in {"", "-"}:
         accepted_answers = _split_variants(raw)
     correct_answer = str(draft.get("correct_answer") or "")
     if correct_answer and correct_answer.lower() not in {item.lower() for item in accepted_answers}:
         accepted_answers.append(correct_answer)
     draft["accepted_answers"] = _dedupe_ordered(accepted_answers)
-    await state.update_data(level_test_manual_draft=draft)
-    await state.set_state(AdminStates.level_test_manual_explanation)
-    await message.answer(t("admin_level_test.manual_explanation_prompt"))
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_explanation(message, state)
 
 
-@router.message(AdminStates.level_test_manual_explanation)
-async def admin_level_test_manual_explanation(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    raw = (message.text or "").strip()
-    explanation = None if raw == "-" else _normalize_spaces(raw)
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+async def _manual_apply_explanation(message: Message, state: FSMContext, raw_value: str) -> None:
+    raw = (raw_value or "").strip()
+    explanation = None if raw in {"", "-"} else _normalize_spaces(raw)
+    draft = await _manual_get_draft(state)
     draft["explanation"] = explanation
-    await state.update_data(level_test_manual_draft=draft)
-    await state.set_state(AdminStates.level_test_manual_is_active)
-    await message.answer(t("admin_level_test.manual_is_active_prompt"))
+    await _manual_set_draft(state, draft)
+    await _manual_prompt_is_active(message, state)
 
 
-@router.message(AdminStates.level_test_manual_is_active)
-async def admin_level_test_manual_is_active(message: Message, state: FSMContext) -> None:
-    if not await ensure_admin_message(message):
-        return
-    raw = (message.text or "").strip()
-    is_active = _parse_bool_text(raw)
-    if is_active is None:
-        await message.answer(t("admin_level_test.manual_is_active_invalid"))
-        return
-    data = await state.get_data()
-    draft = dict(data.get("level_test_manual_draft") or {})
+async def _manual_finalize(message: Message, state: FSMContext, is_active: bool) -> None:
+    draft = await _manual_get_draft(state)
     draft["is_active"] = is_active
-
     try:
         payload = _validate_question(draft, 1)
     except QuestionValidationError as exc:
-        await message.answer(
-            t(
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t(
                 "admin_level_test.item_validation_error",
                 index=exc.index,
                 field=exc.field,
@@ -520,15 +621,196 @@ async def admin_level_test_manual_is_active(message: Message, state: FSMContext)
         )
         return
 
-    inserted, skipped_duplicates = await _save_questions([payload])
-    await state.clear()
+    inserted, skipped_duplicates, inserted_ids = await _save_questions([payload])
     if inserted <= 0 and skipped_duplicates > 0:
-        await message.answer(
-            t("admin_level_test.manual_duplicate"),
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_duplicate"),
             reply_markup=admin_level_test_menu_kb(),
         )
+        await state.clear()
         return
-    await message.answer(
-        t("admin_level_test.manual_saved"),
+
+    question_id = inserted_ids[0] if inserted_ids else 0
+    choices = ", ".join(payload.choices or []) if payload.choices else t("common.none")
+    accepted = ", ".join(payload.accepted_answers or []) if payload.accepted_answers else t("common.none")
+    explanation = payload.explanation or t("common.none")
+    status = t("common.status_on") if payload.is_active else t("common.status_off")
+    await _upsert_manual_flow_message(
+        message,
+        state,
+        text=t(
+            "admin_level_test.manual_saved_detail",
+            question_id=question_id,
+            level_tag=payload.level_tag,
+            difficulty=payload.difficulty,
+            question_type=payload.question_type,
+            prompt=payload.prompt,
+            correct_answer=payload.correct_answer or t("common.none"),
+            choices=choices,
+            accepted_answers=accepted,
+            explanation=explanation,
+            status=status,
+        ),
         reply_markup=admin_level_test_menu_kb(),
     )
+    await state.clear()
+
+
+@router.callback_query(F.data == "admin:level_test:manual")
+async def admin_level_test_manual_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    await state.update_data(
+        level_test_manual_draft={},
+        **{MANUAL_FLOW_MESSAGE_ID_KEY: callback.message.message_id},
+    )
+    await _manual_prompt_level(callback.message, state)
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_level_tag)
+async def admin_level_test_manual_level_tag(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_level(message, state, message.text or "")
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_level_tag,
+    F.data.startswith("admin:level_test:manual:level:"),
+)
+async def admin_level_test_manual_level_tag_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    level_tag = callback.data.rsplit(":", 1)[-1]
+    await _manual_apply_level(callback.message, state, level_tag)
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_difficulty)
+async def admin_level_test_manual_difficulty(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_difficulty(message, state, message.text or "")
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_difficulty,
+    F.data.startswith("admin:level_test:manual:difficulty:"),
+)
+async def admin_level_test_manual_difficulty_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    value = callback.data.rsplit(":", 1)[-1]
+    await _manual_apply_difficulty(callback.message, state, value)
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_type)
+async def admin_level_test_manual_type(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_type(message, state, message.text or "")
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_type,
+    F.data.startswith("admin:level_test:manual:type:"),
+)
+async def admin_level_test_manual_type_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    value = callback.data.rsplit(":", 1)[-1]
+    await _manual_apply_type(callback.message, state, value)
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_prompt)
+async def admin_level_test_manual_prompt(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_prompt(message, state, message.text or "")
+
+
+@router.message(AdminStates.level_test_manual_choices)
+async def admin_level_test_manual_choices(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_choices(message, state, message.text or "")
+
+
+@router.message(AdminStates.level_test_manual_correct_answer)
+async def admin_level_test_manual_correct_answer(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_correct_answer(message, state, message.text or "")
+
+
+@router.message(AdminStates.level_test_manual_accepted_answers)
+async def admin_level_test_manual_accepted_answers(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_accepted_answers(message, state, message.text or "")
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_accepted_answers,
+    F.data == "admin:level_test:manual:accepted:skip",
+)
+async def admin_level_test_manual_accepted_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    await _manual_apply_accepted_answers(callback.message, state, "-")
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_explanation)
+async def admin_level_test_manual_explanation(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    await _manual_apply_explanation(message, state, message.text or "")
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_explanation,
+    F.data == "admin:level_test:manual:explanation:skip",
+)
+async def admin_level_test_manual_explanation_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    await _manual_apply_explanation(callback.message, state, "-")
+    await callback.answer()
+
+
+@router.message(AdminStates.level_test_manual_is_active)
+async def admin_level_test_manual_is_active(message: Message, state: FSMContext) -> None:
+    if not await ensure_admin_message(message):
+        return
+    is_active = _parse_bool_text((message.text or "").strip())
+    if is_active is None:
+        await _upsert_manual_flow_message(
+            message,
+            state,
+            text=t("admin_level_test.manual_is_active_invalid"),
+            reply_markup=admin_level_test_manual_active_kb(),
+        )
+        return
+    await _manual_finalize(message, state, is_active)
+
+
+@router.callback_query(
+    AdminStates.level_test_manual_is_active,
+    F.data.startswith("admin:level_test:manual:active:"),
+)
+async def admin_level_test_manual_is_active_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_admin_callback(callback):
+        return
+    raw = callback.data.rsplit(":", 1)[-1].lower()
+    is_active = True if raw == "yes" else False if raw == "no" else None
+    if is_active is None:
+        await callback.answer()
+        return
+    await _manual_finalize(callback.message, state, is_active)
+    await callback.answer()

@@ -7,10 +7,10 @@ def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyb
     keyboard = [
         [
             KeyboardButton(text=b("menu.add_word")),
-            KeyboardButton(text=b("menu.practice")),
+            KeyboardButton(text=b("menu.my_words")),
         ],
         [
-            KeyboardButton(text=b("menu.my_words")),
+            KeyboardButton(text=b("menu.practice")),
             KeyboardButton(text=b("menu.quiz")),
         ],
         [
@@ -26,10 +26,10 @@ def main_menu_kb(is_admin: bool = False, streak: int | None = None) -> ReplyKeyb
             KeyboardButton(text=b("menu.settings")),
         ],
     ]
-    if is_admin:
-        keyboard.append([KeyboardButton(text=b("menu.admin"))])
     if streak and streak > 0:
         keyboard.append([KeyboardButton(text=b("menu.streak", days=streak))])
+    if is_admin:
+        keyboard.append([KeyboardButton(text=b("menu.admin"))])
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 

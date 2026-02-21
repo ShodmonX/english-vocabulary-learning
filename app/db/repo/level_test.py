@@ -403,6 +403,27 @@ async def get_latest_completed_attempt(
     return result.scalar_one_or_none()
 
 
+async def list_completed_full_attempts_in_period(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    from_utc: datetime,
+    to_utc: datetime,
+) -> list[LevelTestAttempt]:
+    result = await session.execute(
+        select(LevelTestAttempt)
+        .where(
+            LevelTestAttempt.user_id == user_id,
+            LevelTestAttempt.mode.like("FULL_%"),
+            LevelTestAttempt.status.in_(("FINISHED", "EXPIRED", "CANCELLED")),
+            LevelTestAttempt.updated_at >= from_utc,
+            LevelTestAttempt.updated_at < to_utc,
+        )
+        .order_by(LevelTestAttempt.updated_at.asc(), LevelTestAttempt.id.asc())
+    )
+    return list(result.scalars().all())
+
+
 async def get_latest_confirmed_estimated_attempt(
     session: AsyncSession,
     *,

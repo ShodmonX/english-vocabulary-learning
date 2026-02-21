@@ -59,6 +59,7 @@ class ReminderService:
 
     async def send_reminder(self, telegram_id: int) -> None:
         from app.main import bot  # lazy import to avoid circular dependency
+        from app.bot.keyboards.reminder import reminder_practice_kb
 
         async with AsyncSessionLocal() as session:
             user = await get_user_by_telegram_id(session, telegram_id)
@@ -75,4 +76,5 @@ class ReminderService:
         await bot.send_message(
             telegram_id,
             t("reminder.message"),
+            reply_markup=reminder_practice_kb(),
         )

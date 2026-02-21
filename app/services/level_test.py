@@ -3,18 +3,21 @@ from __future__ import annotations
 import random
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import LevelTestAttempt, LevelTestAttemptItem
+from app.db.repo import app_settings as app_settings_repo
 from app.db.repo import level_test as repo
 
 PLACEMENT_MODE = "PLACEMENT_30"
-FULL_MODE = "FULL_30"
+FULL_MODE = "FULL"
+FULL_MODE_PREFIX = "FULL_"
 UI_MODE_LINEAR = "LINEAR"
 UI_MODE_FLAGGED = "FLAGGED"
 
@@ -31,6 +34,7 @@ FULL_QUESTION_COUNT = int(getattr(settings, "full_question_count", PLACEMENT_QUE
 FULL_MCQ_COUNT = int(getattr(settings, "full_mcq_count", PLACEMENT_MCQ_COUNT))
 FULL_TYPING_COUNT = int(getattr(settings, "full_typing_count", PLACEMENT_TYPING_COUNT))
 FULL_TIME_LIMIT_SECONDS = int(getattr(settings, "full_time_limit_seconds", PLACEMENT_TIME_LIMIT_SECONDS))
+FULL_STAGE_PASS_THRESHOLD = float(getattr(settings, "full_stage_pass_threshold", 80.0))
 
 CEFR_LEVEL_SEQUENCE: tuple[str, ...] = ("A1", "A2", "B1", "B2", "C1", "C2")
 
@@ -43,6 +47,8 @@ _APOSTROPHE_TRANSLATION = str.maketrans(
     }
 )
 
+DEFAULT_MCQ_RATIO = 0.6
+
 
 @dataclass(slots=True)
 class AttemptSnapshot:
@@ -52,6 +58,13 @@ class AttemptSnapshot:
     flagged_indexes: list[int]
     correct_indexes: list[int]
     remaining_seconds: int
+
+
+@dataclass(slots=True)
+class FullAccessDecision:
+    start_level: str
+    free_available: bool
+    next_free_at_utc: datetime
 
 
 class LevelTestError(Exception):
@@ -64,6 +77,90 @@ class QuestionBankError(LevelTestError):
 
 def utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def _int_setting(name: str, fallback: int, *, min_value: int) -> int:
+    try:
+        value = int(getattr(settings, name, fallback))
+    except (TypeError, ValueError):
+        return fallback
+    return value if value >= min_value else fallback
+
+
+def placement_question_count() -> int:
+    return _int_setting("placement_question_count", PLACEMENT_QUESTION_COUNT, min_value=2)
+
+
+def full_question_count() -> int:
+    fallback = max(2, int(getattr(settings, "full_question_count", PLACEMENT_QUESTION_COUNT)))
+    return _int_setting("full_question_count", fallback, min_value=2)
+
+
+def placement_time_limit_seconds() -> int:
+    return _int_setting(
+        "placement_time_limit_seconds",
+        PLACEMENT_TIME_LIMIT_SECONDS,
+        min_value=60,
+    )
+
+
+def full_time_limit_seconds() -> int:
+    fallback = max(
+        60,
+        int(getattr(settings, "full_time_limit_seconds", PLACEMENT_TIME_LIMIT_SECONDS)),
+    )
+    return _int_setting("full_time_limit_seconds", fallback, min_value=60)
+
+
+def split_question_counts(total_questions: int) -> tuple[int, int]:
+    total = max(2, int(total_questions))
+    mcq_count = int(round(total * DEFAULT_MCQ_RATIO))
+    mcq_count = max(1, min(total - 1, mcq_count))
+    typing_count = total - mcq_count
+    return mcq_count, typing_count
+
+
+def attempt_time_limit_seconds(attempt: LevelTestAttempt) -> int:
+    seconds = int((attempt.expires_at - attempt.started_at).total_seconds())
+    return max(1, seconds)
+
+
+def question_mix_for_mode(mode: str) -> tuple[int, int]:
+    if is_full_mode(mode):
+        total = full_question_count()
+        hinted_mcq = int(getattr(settings, "full_mcq_count", 0) or 0)
+        hinted_typing = int(getattr(settings, "full_typing_count", 0) or 0)
+    else:
+        total = placement_question_count()
+        hinted_mcq = int(getattr(settings, "placement_mcq_count", 0) or 0)
+        hinted_typing = int(getattr(settings, "placement_typing_count", 0) or 0)
+    if hinted_mcq > 0 and hinted_typing > 0 and (hinted_mcq + hinted_typing == total):
+        return hinted_mcq, hinted_typing
+    return split_question_counts(total)
+
+
+async def runtime_question_count_for_mode(session: AsyncSession, mode: str) -> int:
+    if is_full_mode(mode):
+        value = await app_settings_repo.get_full_question_count(session)
+        if value and value >= 2:
+            return int(value)
+        return full_question_count()
+    value = await app_settings_repo.get_placement_question_count(session)
+    if value and value >= 2:
+        return int(value)
+    return placement_question_count()
+
+
+async def runtime_time_limit_for_mode(session: AsyncSession, mode: str) -> int:
+    if is_full_mode(mode):
+        value = await app_settings_repo.get_full_time_limit_seconds(session)
+        if value and value >= 60:
+            return int(value)
+        return full_time_limit_seconds()
+    value = await app_settings_repo.get_placement_time_limit_seconds(session)
+    if value and value >= 60:
+        return int(value)
+    return placement_time_limit_seconds()
 
 
 def normalize_typing_answer(value: str) -> str:
@@ -147,18 +244,77 @@ def build_question_order(
     return ordered
 
 
-def level_path_from(level_tag: str | None) -> tuple[str, ...]:
+def normalize_level_tag(level_tag: str | None) -> str:
     normalized = str(level_tag or "").strip().upper()
-    if normalized not in CEFR_LEVEL_SEQUENCE:
-        return CEFR_LEVEL_SEQUENCE
-    start_index = CEFR_LEVEL_SEQUENCE.index(normalized)
-    return CEFR_LEVEL_SEQUENCE[start_index:]
+    if normalized in CEFR_LEVEL_SEQUENCE:
+        return normalized
+    return "A1"
+
+
+def full_mode_for_level(level_tag: str | None) -> str:
+    return f"{FULL_MODE_PREFIX}{normalize_level_tag(level_tag)}"
+
+
+def full_stage_from_mode(mode: str | None) -> str | None:
+    raw = str(mode or "").upper()
+    if not raw.startswith(FULL_MODE_PREFIX):
+        return None
+    level = raw[len(FULL_MODE_PREFIX) :]
+    if level in CEFR_LEVEL_SEQUENCE:
+        return level
+    return None
+
+
+def is_full_mode(mode: str | None) -> bool:
+    raw = str(mode or "").upper()
+    return raw.startswith(FULL_MODE_PREFIX)
+
+
+def next_stage(level_tag: str | None) -> str | None:
+    level = normalize_level_tag(level_tag)
+    index = CEFR_LEVEL_SEQUENCE.index(level)
+    if index >= len(CEFR_LEVEL_SEQUENCE) - 1:
+        return None
+    return CEFR_LEVEL_SEQUENCE[index + 1]
+
+
+def is_full_stage_passed(
+    *,
+    mode: str | None,
+    status: str | None,
+    score_pct: float | None,
+) -> bool:
+    stage = full_stage_from_mode(mode)
+    if not stage:
+        return False
+    if status != STATUS_FINISHED:
+        return False
+    return float(score_pct or 0.0) >= FULL_STAGE_PASS_THRESHOLD
+
+
+def month_window_utc(now_utc: datetime | None = None) -> tuple[datetime, datetime]:
+    now = now_utc or utcnow()
+    tz = ZoneInfo(settings.timezone)
+    now_local = now.replace(tzinfo=timezone.utc).astimezone(tz)
+    start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start_local.month == 12:
+        next_local = start_local.replace(year=start_local.year + 1, month=1)
+    else:
+        next_local = start_local.replace(month=start_local.month + 1)
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    next_utc = next_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return start_utc, next_utc
+
+
+def next_free_exam_at_utc(now_utc: datetime | None = None) -> datetime:
+    _, next_utc = month_window_utc(now_utc)
+    return next_utc
 
 
 def time_limit_for_mode(mode: str) -> int:
-    if mode == FULL_MODE:
-        return FULL_TIME_LIMIT_SECONDS
-    return PLACEMENT_TIME_LIMIT_SECONDS
+    if is_full_mode(mode):
+        return full_time_limit_seconds()
+    return placement_time_limit_seconds()
 
 
 def next_flagged_index(
@@ -186,19 +342,27 @@ async def _compute_result_fields(
     attempt: LevelTestAttempt,
     *,
     total_questions: int,
+    status: str,
 ) -> tuple[float, str, str]:
     await repo.refresh_attempt_counters(session, attempt)
     if total_questions <= 0:
         score_pct = 0.0
     else:
         score_pct = round((attempt.correct_count / total_questions) * 100, 2)
-    level_estimate = score_to_level(score_pct)
+    full_stage = full_stage_from_mode(attempt.mode)
+    if full_stage:
+        if status == STATUS_FINISHED and score_pct >= FULL_STAGE_PASS_THRESHOLD:
+            level_estimate = next_stage(full_stage) or full_stage
+        else:
+            level_estimate = full_stage
+    else:
+        level_estimate = score_to_level(score_pct)
     time_spent_seconds = max(0.0, (utcnow() - attempt.started_at).total_seconds())
     confidence = estimate_confidence(
         answered_count=attempt.answered_count,
         total_questions=total_questions,
         time_spent_seconds=time_spent_seconds,
-        time_limit_seconds=time_limit_for_mode(attempt.mode),
+        time_limit_seconds=attempt_time_limit_seconds(attempt),
     )
     return score_pct, level_estimate, confidence
 
@@ -214,6 +378,7 @@ async def _finalize(
         session,
         attempt,
         total_questions=total_questions,
+        status=status,
     )
     await repo.finalize_attempt(
         session,
@@ -347,15 +512,18 @@ async def start_or_resume_placement_attempt(
     chat_id: int,
     message_id: int,
 ) -> LevelTestAttempt:
+    question_count = await runtime_question_count_for_mode(session, PLACEMENT_MODE)
+    mcq_count, typing_count = split_question_counts(question_count)
+    time_limit_seconds = await runtime_time_limit_for_mode(session, PLACEMENT_MODE)
     return await _start_or_resume_attempt(
         session,
         user_id=user_id,
         chat_id=chat_id,
         message_id=message_id,
         mode=PLACEMENT_MODE,
-        mcq_count=PLACEMENT_MCQ_COUNT,
-        typing_count=PLACEMENT_TYPING_COUNT,
-        time_limit_seconds=PLACEMENT_TIME_LIMIT_SECONDS,
+        mcq_count=mcq_count,
+        typing_count=typing_count,
+        time_limit_seconds=time_limit_seconds,
     )
 
 
@@ -365,6 +533,7 @@ async def _pick_questions_with_optional_level_bias(
     question_type: str,
     limit: int,
     preferred_levels: Sequence[str] | None = None,
+    strict_preferred_levels: bool = False,
 ) -> list[int]:
     picked_ids: list[int] = []
     if preferred_levels:
@@ -375,6 +544,8 @@ async def _pick_questions_with_optional_level_bias(
             level_tags=preferred_levels,
         )
         picked_ids.extend(question.id for question in preferred_questions)
+    if strict_preferred_levels:
+        return picked_ids
     remaining = limit - len(picked_ids)
     if remaining > 0:
         extra_questions = await repo.pick_random_questions(
@@ -398,6 +569,7 @@ async def _start_or_resume_attempt(
     typing_count: int,
     time_limit_seconds: int,
     preferred_levels: Sequence[str] | None = None,
+    strict_preferred_levels: bool = False,
 ) -> LevelTestAttempt:
     active = await repo.get_active_attempt(session, user_id, for_update=True)
     if active:
@@ -425,12 +597,14 @@ async def _start_or_resume_attempt(
         question_type="MCQ",
         limit=mcq_count,
         preferred_levels=preferred_levels,
+        strict_preferred_levels=strict_preferred_levels,
     )
     typing_question_ids = await _pick_questions_with_optional_level_bias(
         session,
         question_type="TYPING",
         limit=typing_count,
         preferred_levels=preferred_levels,
+        strict_preferred_levels=strict_preferred_levels,
     )
     question_ids = build_question_order(
         mcq_question_ids,
@@ -480,16 +654,22 @@ async def start_or_resume_full_attempt(
     message_id: int,
     start_level_tag: str,
 ) -> LevelTestAttempt:
+    start_level = normalize_level_tag(start_level_tag)
+    mode = full_mode_for_level(start_level)
+    question_count = await runtime_question_count_for_mode(session, mode)
+    mcq_count, typing_count = split_question_counts(question_count)
+    time_limit_seconds = await runtime_time_limit_for_mode(session, mode)
     return await _start_or_resume_attempt(
         session,
         user_id=user_id,
         chat_id=chat_id,
         message_id=message_id,
-        mode=FULL_MODE,
-        mcq_count=FULL_MCQ_COUNT,
-        typing_count=FULL_TYPING_COUNT,
-        time_limit_seconds=FULL_TIME_LIMIT_SECONDS,
-        preferred_levels=level_path_from(start_level_tag),
+        mode=mode,
+        mcq_count=mcq_count,
+        typing_count=typing_count,
+        time_limit_seconds=time_limit_seconds,
+        preferred_levels=(start_level,),
+        strict_preferred_levels=True,
     )
 
 
@@ -832,3 +1012,43 @@ async def get_latest_completed_attempt(
     user_id: int,
 ) -> LevelTestAttempt | None:
     return await repo.get_latest_completed_attempt(session, user_id=user_id)
+
+
+async def evaluate_full_access(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    quick_level_tag: str,
+) -> FullAccessDecision:
+    start_utc, end_utc = month_window_utc()
+    attempts = await repo.list_completed_full_attempts_in_period(
+        session,
+        user_id=user_id,
+        from_utc=start_utc,
+        to_utc=end_utc,
+    )
+    current_level = normalize_level_tag(quick_level_tag)
+    free_available = True
+    for attempt in attempts:
+        stage = full_stage_from_mode(attempt.mode)
+        if not stage:
+            continue
+        current_level = stage
+        if is_full_stage_passed(
+            mode=attempt.mode,
+            status=attempt.status,
+            score_pct=attempt.score_pct,
+        ):
+            next_level = next_stage(stage)
+            if next_level:
+                current_level = next_level
+                continue
+            free_available = False
+            break
+        free_available = False
+        break
+    return FullAccessDecision(
+        start_level=current_level,
+        free_available=free_available,
+        next_free_at_utc=end_utc,
+    )

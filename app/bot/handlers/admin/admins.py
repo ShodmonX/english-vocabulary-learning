@@ -238,7 +238,7 @@ async def admin_admins_add_cancel(callback: CallbackQuery, state: FSMContext) ->
     if not await ensure_main_admin_callback(callback):
         return
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.answer(
         t("admin_admins.menu_title"), reply_markup=admin_admins_menu_kb()
     )
     await callback.answer()
