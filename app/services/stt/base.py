@@ -17,5 +17,10 @@ class STTProviderError(Exception):
 
 
 class STTProvider:
-    async def transcribe(self, wav_path: str) -> TranscriptionResult:
+    async def transcribe(
+        self,
+        wav_path: str,
+        *,
+        reference_text: str | None = None,
+    ) -> TranscriptionResult:
         raise NotImplementedError

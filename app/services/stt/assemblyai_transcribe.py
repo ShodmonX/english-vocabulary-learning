@@ -107,9 +107,16 @@ async def _request_with_retries(
 
 class AssemblyAITranscribeSTT(STTProvider):
     def __init__(self) -> None:
-        self.api_key = settings.assemblyai_api_key
+        self.api_key = (settings.assemblyai_api_key or "").strip()
+        if not self.api_key:
+            raise STTProviderError("ASSEMBLYAI_API_KEY is not configured", user_message=_RATE_LIMIT_MESSAGE)
 
-    async def transcribe(self, wav_path: str) -> TranscriptionResult:
+    async def transcribe(
+        self,
+        wav_path: str,
+        *,
+        reference_text: str | None = None,
+    ) -> TranscriptionResult:
         acquired = await _acquire_slot()
         if not acquired:
             logger.warning(

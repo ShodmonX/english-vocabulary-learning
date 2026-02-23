@@ -34,6 +34,18 @@ def admin_menu_kb(is_owner: bool = False) -> InlineKeyboardMarkup:
                 callback_data="admin:test_limits",
             )
         )
+        buttons.append(
+            InlineKeyboardButton(
+                text=b("admin.stt_provider"),
+                callback_data="admin:stt_provider",
+            )
+        )
+        buttons.append(
+            InlineKeyboardButton(
+                text=b("admin.pron_max_voice"),
+                callback_data="admin:pron_max_voice",
+            )
+        )
     buttons.append(InlineKeyboardButton(text=b("admin.exit"), callback_data="admin:exit"))
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     return InlineKeyboardMarkup(inline_keyboard=rows)

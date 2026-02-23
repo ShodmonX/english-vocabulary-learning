@@ -25,6 +25,7 @@ class AdminStates(StatesGroup):
     basic_limit_edit = State()
     full_test_charge_edit = State()
     test_limits_edit = State()
+    pron_max_voice_edit = State()
     level_test_menu = State()
     level_test_json_input = State()
     level_test_manual_level_tag = State()

@@ -12,6 +12,8 @@ PLACEMENT_QUESTION_COUNT_KEY = "placement_question_count"
 PLACEMENT_TIME_LIMIT_SECONDS_KEY = "placement_time_limit_seconds"
 FULL_QUESTION_COUNT_KEY = "full_question_count"
 FULL_TIME_LIMIT_SECONDS_KEY = "full_time_limit_seconds"
+STT_PROVIDER_KEY = "stt_provider"
+PRONUNCIATION_MAX_VOICE_SECONDS_KEY = "pronunciation_max_voice_seconds"
 
 
 async def get_setting(session: AsyncSession, key: str) -> str | None:
@@ -197,6 +199,64 @@ async def set_full_time_limit_seconds(
         SettingsChangeLog(
             admin_id=admin_id,
             setting_key=FULL_TIME_LIMIT_SECONDS_KEY,
+            old_value=old_value,
+            new_value=str(value),
+        )
+    )
+    await session.commit()
+
+
+async def get_stt_provider(session: AsyncSession) -> str | None:
+    value = await get_setting(session, STT_PROVIDER_KEY)
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in {"assemblyai", "azure"}:
+        return None
+    return normalized
+
+
+async def set_stt_provider(
+    session: AsyncSession,
+    value: str,
+    admin_id: int,
+) -> None:
+    normalized = value.strip().lower()
+    old_value = await get_setting(session, STT_PROVIDER_KEY)
+    await set_setting(session, STT_PROVIDER_KEY, normalized)
+    session.add(
+        SettingsChangeLog(
+            admin_id=admin_id,
+            setting_key=STT_PROVIDER_KEY,
+            old_value=old_value,
+            new_value=normalized,
+        )
+    )
+    await session.commit()
+
+
+async def get_pronunciation_max_voice_seconds(session: AsyncSession) -> int | None:
+    value = await get_setting(session, PRONUNCIATION_MAX_VOICE_SECONDS_KEY)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
+async def set_pronunciation_max_voice_seconds(
+    session: AsyncSession,
+    value: int,
+    admin_id: int,
+) -> None:
+    old_value = await get_setting(session, PRONUNCIATION_MAX_VOICE_SECONDS_KEY)
+    await set_setting(session, PRONUNCIATION_MAX_VOICE_SECONDS_KEY, str(value))
+    session.add(
+        SettingsChangeLog(
+            admin_id=admin_id,
+            setting_key=PRONUNCIATION_MAX_VOICE_SECONDS_KEY,
             old_value=old_value,
             new_value=str(value),
         )
