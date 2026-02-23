@@ -422,6 +422,20 @@ admin_settings:
   label_quick_time: "Tez test vaqti (sekund)"
   label_full_count: "Level test savollar soni"
   label_full_time: "Level test vaqti (sekund)"
+  stt_provider_body: |
+    🗣 STT servis sozlamasi
+
+    Hozirgi servis: {provider}
+    Kerakli servisni tanlang:
+  stt_provider_updated: "✅ STT servis yangilandi: {provider}"
+  stt_provider_invalid: "⚠️ Noto‘g‘ri STT servis."
+  provider_label_assemblyai: "AssemblyAI"
+  provider_label_azure: "Azure"
+  pron_max_voice_body: "Hozirgi maksimal audio uzunligi: {value}s"
+  pron_max_voice_prompt: "Yangi maksimal audio uzunligini sekundda yuboring (faqat son):"
+  pron_max_voice_invalid: "⚠️ Noto‘g‘ri qiymat. {min}..{max} oralig‘ida son yuboring."
+  pron_max_voice_confirm: "Maksimal audio uzunligini {old}s dan {new}s ga o‘zgartirasizmi?"
+  pron_max_voice_updated: "✅ Maksimal audio uzunligi yangilandi: {new}s"
 
 admin_credits:
   menu: "💳 Kreditlar bo‘limi:"
@@ -794,16 +808,42 @@ pronunciation:
   verdict_correct: "✅ To‘g‘ri"
   verdict_close: "🟨 Yaqin"
   verdict_wrong: "❌ Noto‘g‘ri"
+  error_none: "xato aniqlanmadi"
+  error_mispronunciation: "noto‘g‘ri talaffuz"
+  error_omission: "tushib qolgan"
+  error_insertion: "ortiqcha"
+  error_unexpected_break: "noto‘g‘ri pauza"
+  error_missing_break: "pauza yetishmaydi"
+  error_monotone: "bir xil ohang"
+  assessment_overall: "📊 Umumiy talaffuz: {score}"
+  assessment_breakdown: "📈 Tahlil: {values}"
+  assessment_part_accuracy: "Aniqlik {score}"
+  assessment_part_fluency: "Ravonlik {score}"
+  assessment_part_completeness: "To‘liqlik {score}"
+  assessment_part_prosody: "Ohang {score}"
+  assessment_words: "🔎 So‘zlar: {values}"
+  assessment_word_item: "{word} {score} ({error})"
+  assessment_phonemes: "🔤 Zaif fonemalar: {values}"
+  assessment_phoneme_item: "{phoneme} {score}"
   quiz_no_words: "🫤 Quiz uchun so‘z topilmadi. Avval so‘z qo‘shing."
   results_search: "🔎 Natijalar"
   results_recent: "🕒 Oxirgilar"
   results_selected: "✅ Tanlanganlar"
   results_page: "{title} ({page}):"
   selected_empty: "Tanlangan so‘zlar yo‘q 🙂"
-  voice_too_long: "⏱ Juda uzun. 5–10 soniya yuboring 🙂"
+  voice_too_long: "⏱ Juda uzun. Maksimum: {max_seconds} soniya 🙂"
   voice_too_large: "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
   voice_process_failed: "⚠️ Ovozni qayta ishlay olmadim."
   voice_not_understood: "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
+  voice_not_understood_word: |
+    ❗ Ovoz tushunilmadi
+    Men "{word}" so‘zini aniqlay olmadim (audio past yoki bo‘sh bo‘lishi mumkin).
+
+    Qayta urinib ko‘ring:
+    - mikrofonga yaqinroq gapiring
+    - shovqinsiz joyda 1–2 soniya aniq ayting: {word}
+
+    🔁 Qayta yuboring.
   credit_error: "⚠️ Kredit tekshirishda xatolik yuz berdi."
   check_failed: "⚠️ Hozir tekshirib bo‘lmadi. Keyinroq urinib ko‘ring 🙂"
   disabled_global: "🫤 Talaffuz hozircha o‘chirib qo‘yilgan."
@@ -825,9 +865,44 @@ pronunciation:
   hidden_result: "⚠️ Natija xavfsizlik sababli ko‘rsatilmadi."
   single_result: "{verdict}\n📝 Men eshitganim: {transcript}"
   single_result_hidden: "{verdict}\n⚠️ Natija xavfsizlik sababli ko‘rsatilmadi."
+  single_feedback_success: |
+    ✅ To‘g‘ri — {overall}/100
+
+    🎧 Eshitganim: {transcript}
+
+    🛠 Yaxshilash uchun:
+    {tips_bullets}
+
+    🔁 Xohlasangiz yana bir marta ayting.
+  single_feedback_low: |
+    ⚠️ Yomon emas — {overall}/100
+
+    🎧 Eshitganim: {transcript}
+
+    {worst_block}
+    🛠 Maslahatlar:
+    {tips_bullets}
+
+    🔁 Xohlasangiz yana bir marta ayting.
+  single_feedback_worst_block: "📌 Eng katta muammo: {word} ({error})\n"
+  single_feedback_detail: |
+    {base}
+
+    ─── Batafsil ───
+    {details}
+  tip_generic: "so‘zni aniqroq va ravonroq ayting"
+  tip_m: "“m” tovushini boshlanishida kuchliroq ayting"
+  tip_ey: "“ey” qismini biroz tiniqroq cho‘zing"
+  tip_phoneme_generic: "“{phoneme}” tovushini aniqroq talaffuz qiling"
+  tip_from_error: "{error} holatini kamaytirish uchun so‘zni sekinroq va aniqroq ayting"
   select_quiz_title: "🎯 Tanlab talaffuz quiz"
   select_min_words: "⚠️ Quiz uchun kamida 3 ta so‘z tanlang."
   quiz_feedback: |
+    Natija: {verdict}
+    {transcript_line}
+    🎯 To‘g‘rilik: {result_pct}
+    ⭐ Ball: +{delta} | Jami: {score}
+  quiz_feedback_simple: |
     Natija: {verdict}
     {transcript_line}
     ⭐ Ball: +{delta} | Jami: {score}

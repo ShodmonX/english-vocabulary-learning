@@ -16,6 +16,8 @@ from app.bot.handlers.admin.states import AdminStates
 from app.bot.keyboards.admin.settings import (
     admin_basic_limit_kb,
     admin_full_test_charge_kb,
+    admin_pron_max_voice_kb,
+    admin_stt_provider_kb,
     admin_test_limits_kb,
 )
 from app.bot.keyboards.admin.users import admin_confirm_kb
@@ -27,12 +29,16 @@ from app.db.repo.app_settings import (
     get_full_time_limit_seconds,
     get_placement_question_count,
     get_placement_time_limit_seconds,
+    get_pronunciation_max_voice_seconds,
+    get_stt_provider,
     set_basic_monthly_seconds,
     set_full_question_count,
     set_full_test_charge_seconds,
     set_full_time_limit_seconds,
     set_placement_question_count,
     set_placement_time_limit_seconds,
+    set_pronunciation_max_voice_seconds,
+    set_stt_provider,
 )
 from app.db.session import AsyncSessionLocal
 from app.services.i18n import t
@@ -47,6 +53,8 @@ MIN_TEST_QUESTION_COUNT = 2
 MAX_TEST_QUESTION_COUNT = 200
 MIN_TEST_TIME_SECONDS = 60
 MAX_TEST_TIME_SECONDS = 7200
+MIN_PRON_MAX_VOICE_SECONDS = 3
+MAX_PRON_MAX_VOICE_SECONDS = 120
 
 TestLimitKey = Literal["quick_count", "quick_time", "full_count", "full_time"]
 
@@ -75,6 +83,27 @@ async def _current_test_limits() -> dict[TestLimitKey, int]:
         "full_count": full_count if full_count and full_count > 0 else settings.full_question_count,
         "full_time": full_time if full_time and full_time > 0 else settings.full_time_limit_seconds,
     }
+
+
+async def _current_stt_provider() -> str:
+    async with AsyncSessionLocal() as session:
+        value = await get_stt_provider(session)
+    return value if value in {"assemblyai", "azure"} else settings.stt_provider
+
+
+async def _current_pron_max_voice_seconds() -> int:
+    async with AsyncSessionLocal() as session:
+        value = await get_pronunciation_max_voice_seconds(session)
+    if value and value > 0:
+        return value
+    return settings.pronunciation_max_voice_seconds
+
+
+def _stt_provider_label(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized == "azure":
+        return t("admin_settings.provider_label_azure")
+    return t("admin_settings.provider_label_assemblyai")
 
 
 def _test_limit_label(key: TestLimitKey) -> str:
@@ -394,5 +423,130 @@ async def admin_test_limits_cancel(callback: CallbackQuery, state: FSMContext) -
             full_time=values["full_time"],
         ),
         reply_markup=admin_test_limits_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:stt_provider")
+async def admin_stt_provider(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    await state.set_state(AdminStates.menu)
+    provider = await _current_stt_provider()
+    await callback.message.edit_text(
+        t(
+            "admin_settings.stt_provider_body",
+            provider=_stt_provider_label(provider),
+        ),
+        reply_markup=admin_stt_provider_kb(provider),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:stt_provider:set:"))
+async def admin_stt_provider_set(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    provider = callback.data.rsplit(":", 1)[-1].strip().lower()
+    if provider not in {"assemblyai", "azure"}:
+        await callback.answer(t("admin_settings.stt_provider_invalid"), show_alert=True)
+        return
+    async with AsyncSessionLocal() as session:
+        await set_stt_provider(session, provider, callback.from_user.id)
+    settings.stt_provider = provider
+    await state.set_state(AdminStates.menu)
+    await callback.message.edit_text(
+        t(
+            "admin_settings.stt_provider_body",
+            provider=_stt_provider_label(provider),
+        ),
+        reply_markup=admin_stt_provider_kb(provider),
+    )
+    await callback.answer(t("admin_settings.stt_provider_updated", provider=_stt_provider_label(provider)))
+
+
+@router.callback_query(F.data == "admin:pron_max_voice")
+async def admin_pron_max_voice(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    await state.set_state(AdminStates.menu)
+    value = await _current_pron_max_voice_seconds()
+    await callback.message.edit_text(
+        t("admin_settings.pron_max_voice_body", value=value),
+        reply_markup=admin_pron_max_voice_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:pron_max_voice:edit")
+async def admin_pron_max_voice_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    await state.set_state(AdminStates.pron_max_voice_edit)
+    await callback.message.edit_text(t("admin_settings.pron_max_voice_prompt"))
+    await callback.answer()
+
+
+@router.message(AdminStates.pron_max_voice_edit)
+async def admin_pron_max_voice_value(message: Message, state: FSMContext) -> None:
+    if not await ensure_main_admin_message(message):
+        return
+    new_value = parse_int(message.text or "")
+    if not new_value or not (MIN_PRON_MAX_VOICE_SECONDS <= new_value <= MAX_PRON_MAX_VOICE_SECONDS):
+        await message.answer(
+            t(
+                "admin_settings.pron_max_voice_invalid",
+                min=MIN_PRON_MAX_VOICE_SECONDS,
+                max=MAX_PRON_MAX_VOICE_SECONDS,
+            )
+        )
+        return
+    old_value = await _current_pron_max_voice_seconds()
+    await state.update_data(pron_max_voice_new=new_value, pron_max_voice_old=old_value)
+    await message.answer(
+        t("admin_settings.pron_max_voice_confirm", old=old_value, new=new_value),
+        reply_markup=admin_confirm_kb(
+            "admin:pron_max_voice:confirm",
+            "admin:pron_max_voice:cancel",
+        ),
+    )
+
+
+@router.callback_query(F.data == "admin:pron_max_voice:confirm")
+async def admin_pron_max_voice_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    data = await state.get_data()
+    new_value = parse_int(str(data.get("pron_max_voice_new") or ""))
+    if not new_value or not (MIN_PRON_MAX_VOICE_SECONDS <= new_value <= MAX_PRON_MAX_VOICE_SECONDS):
+        await callback.answer(
+            t(
+                "admin_settings.pron_max_voice_invalid",
+                min=MIN_PRON_MAX_VOICE_SECONDS,
+                max=MAX_PRON_MAX_VOICE_SECONDS,
+            ),
+            show_alert=True,
+        )
+        return
+    async with AsyncSessionLocal() as session:
+        await set_pronunciation_max_voice_seconds(session, new_value, callback.from_user.id)
+    settings.pronunciation_max_voice_seconds = new_value
+    await state.clear()
+    await callback.message.answer(
+        t("admin_settings.pron_max_voice_updated", new=new_value)
+    )
+    await open_admin_panel(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:pron_max_voice:cancel")
+async def admin_pron_max_voice_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await ensure_main_admin_callback(callback):
+        return
+    await state.clear()
+    value = await _current_pron_max_voice_seconds()
+    await callback.message.answer(
+        t("admin_settings.pron_max_voice_body", value=value),
+        reply_markup=admin_pron_max_voice_kb(),
     )
     await callback.answer()

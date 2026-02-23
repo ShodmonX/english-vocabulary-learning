@@ -9,7 +9,14 @@ class Settings(BaseSettings):
     database_url: str
     log_level: str
     pronunciation_enabled: bool = False
-    assemblyai_api_key: str
+    stt_provider: str = "assemblyai"
+    assemblyai_api_key: str | None = None
+    azure_speech_key: str | None = None
+    azure_speech_region: str | None = None
+    azure_speech_endpoint: str | None = None
+    azure_speech_language: str = "en-US"
+    azure_speech_timeout_seconds: int = 15
+    pronunciation_max_voice_seconds: int = 15
     stt_max_concurrency: int = 5
     stt_overload_mode: str = "queue"
     stt_queue_max_wait_seconds: int = 10
@@ -96,6 +103,15 @@ class Settings(BaseSettings):
         allowed = {"queue", "failfast"}
         if normalized not in allowed:
             raise ValueError("Invalid STT_OVERLOAD_MODE value")
+        return normalized
+
+    @field_validator("stt_provider")
+    @classmethod
+    def validate_stt_provider(cls, value: str) -> str:
+        normalized = value.lower()
+        allowed = {"assemblyai", "azure"}
+        if normalized not in allowed:
+            raise ValueError("Invalid STT_PROVIDER value")
         return normalized
 
 

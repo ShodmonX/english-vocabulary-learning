@@ -27,6 +27,7 @@ from app.bot.keyboards.pronunciation import (
 )
 from app.config import settings
 from app.db.repo.pronunciation_logs import log_pronunciation
+from app.db.repo.app_settings import get_pronunciation_max_voice_seconds
 from app.db.repo.user_settings import get_or_create_user_settings
 from app.db.repo.users import get_or_create_user
 from app.db.models import Word
@@ -38,7 +39,7 @@ from app.services.pronunciation.base import PronunciationEngine
 from app.services.pronunciation.stt_engine import STTPronunciationEngine
 from app.utils.bad_words import contains_bad_words
 from app.services.stt.base import STTProviderError
-from app.services.stt.assemblyai_transcribe import AssemblyAITranscribeSTT
+from app.services.stt.factory import create_stt_provider, current_stt_provider_name
 from app.services.i18n import t
 from app.db.repo.credits import CreditError, finalize_charge, refund_charge, reserve_credits
 from app.db.repo.srs import get_due_words
@@ -65,7 +66,7 @@ class PronunciationStates(StatesGroup):
 
 
 def _engine() -> PronunciationEngine:
-    return STTPronunciationEngine(AssemblyAITranscribeSTT())
+    return STTPronunciationEngine(create_stt_provider())
 
 
 def _single_prompt(word: str, translation: str) -> str:
@@ -88,6 +89,192 @@ def _verdict_text(verdict: str) -> str:
     if verdict == "close":
         return t("pronunciation.verdict_close")
     return t("pronunciation.verdict_wrong")
+
+
+def _supports_detailed_pron_feedback() -> bool:
+    return (current_stt_provider_name() or "").strip().lower() == "azure"
+
+
+def _format_percent(value: object) -> str:
+    if isinstance(value, (int, float)):
+        bounded = max(0.0, min(100.0, float(value)))
+        return f"{int(round(bounded))}%"
+    return t("common.none")
+
+
+def _extract_pron_assessment(debug: dict | None) -> dict | None:
+    if not isinstance(debug, dict):
+        return None
+    pa = debug.get("pronunciation_assessment")
+    return pa if isinstance(pa, dict) else None
+
+
+def _overall_score_100(*, score_0_to_1: float | None, debug: dict | None) -> int | None:
+    pa = _extract_pron_assessment(debug)
+    if isinstance(pa, dict):
+        raw = pa.get("pron_score")
+        if isinstance(raw, (int, float)):
+            return int(round(max(0.0, min(100.0, float(raw)))))
+    if isinstance(score_0_to_1, (int, float)):
+        return int(round(max(0.0, min(1.0, float(score_0_to_1))) * 100))
+    return None
+
+
+def _error_type_label(raw: str) -> str:
+    normalized = (raw or "").strip().lower()
+    mapping = {
+        "": t("pronunciation.error_none"),
+        "none": t("pronunciation.error_none"),
+        "mispronunciation": t("pronunciation.error_mispronunciation"),
+        "omission": t("pronunciation.error_omission"),
+        "insertion": t("pronunciation.error_insertion"),
+        "unexpectedbreak": t("pronunciation.error_unexpected_break"),
+        "missingbreak": t("pronunciation.error_missing_break"),
+        "monotone": t("pronunciation.error_monotone"),
+    }
+    return mapping.get(normalized, raw or t("common.none"))
+
+
+def _build_assessment_details(debug: dict | None) -> str:
+    pa = _extract_pron_assessment(debug)
+    if not isinstance(pa, dict):
+        return ""
+
+    pron_score = pa.get("pron_score")
+    accuracy_score = pa.get("accuracy_score")
+    fluency_score = pa.get("fluency_score")
+    completeness_score = pa.get("completeness_score")
+    prosody_score = pa.get("prosody_score")
+
+    lines: list[str] = []
+    if isinstance(pron_score, (int, float)):
+        lines.append(t("pronunciation.assessment_overall", score=_format_percent(pron_score)))
+
+    breakdown_parts: list[str] = []
+    if isinstance(accuracy_score, (int, float)):
+        breakdown_parts.append(
+            t("pronunciation.assessment_part_accuracy", score=_format_percent(accuracy_score))
+        )
+    if isinstance(fluency_score, (int, float)):
+        breakdown_parts.append(
+            t("pronunciation.assessment_part_fluency", score=_format_percent(fluency_score))
+        )
+    if isinstance(completeness_score, (int, float)):
+        breakdown_parts.append(
+            t("pronunciation.assessment_part_completeness", score=_format_percent(completeness_score))
+        )
+    if isinstance(prosody_score, (int, float)):
+        breakdown_parts.append(
+            t("pronunciation.assessment_part_prosody", score=_format_percent(prosody_score))
+        )
+    if breakdown_parts:
+        lines.append(t("pronunciation.assessment_breakdown", values=" | ".join(breakdown_parts)))
+
+    words = pa.get("words")
+    if isinstance(words, list) and words:
+        preview: list[str] = []
+        for item in words[:6]:
+            if not isinstance(item, dict):
+                continue
+            word = str(item.get("word") or "").strip()
+            if not word:
+                continue
+            acc = _format_percent(item.get("accuracy_score"))
+            err_label = _error_type_label(str(item.get("error_type") or ""))
+            preview.append(
+                t(
+                    "pronunciation.assessment_word_item",
+                    word=word,
+                    score=acc,
+                    error=err_label,
+                )
+            )
+        if preview:
+            lines.append(t("pronunciation.assessment_words", values=", ".join(preview)))
+
+    phonemes = pa.get("weak_phonemes")
+    if isinstance(phonemes, list) and phonemes:
+        preview: list[str] = []
+        for item in phonemes[:6]:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("phoneme") or "").strip()
+            if not symbol:
+                continue
+            preview.append(
+                t(
+                    "pronunciation.assessment_phoneme_item",
+                    phoneme=symbol,
+                    score=_format_percent(item.get("accuracy_score")),
+                )
+            )
+        if preview:
+            lines.append(t("pronunciation.assessment_phonemes", values=", ".join(preview)))
+
+    return "\n".join(lines)
+
+
+def _build_worst_word_hint(debug: dict | None) -> tuple[str, str, str] | None:
+    pa = _extract_pron_assessment(debug)
+    if not isinstance(pa, dict):
+        return None
+    words = pa.get("words")
+    if not isinstance(words, list):
+        return None
+    candidates: list[tuple[float, str, str]] = []
+    for item in words:
+        if not isinstance(item, dict):
+            continue
+        word = str(item.get("word") or "").strip()
+        if not word:
+            continue
+        score = item.get("accuracy_score")
+        if not isinstance(score, (int, float)):
+            continue
+        error = str(item.get("error_type") or "").strip()
+        candidates.append((float(score), word, error))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0])
+    _, word, error = candidates[0]
+    error_raw = (error or "").strip().lower()
+    return word, error_raw, _error_type_label(error)
+
+
+def _tip_for_phoneme(symbol: str) -> str:
+    normalized = symbol.strip().lower()
+    if normalized.startswith("m"):
+        return t("pronunciation.tip_m")
+    if normalized in {"ey", "eɪ"}:
+        return t("pronunciation.tip_ey")
+    return t("pronunciation.tip_phoneme_generic", phoneme=symbol)
+
+
+def _build_simple_tips(debug: dict | None) -> list[str]:
+    tips: list[str] = []
+    pa = _extract_pron_assessment(debug)
+    if not isinstance(pa, dict):
+        return tips
+    phonemes = pa.get("weak_phonemes")
+    if isinstance(phonemes, list):
+        for item in phonemes[:4]:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("phoneme") or "").strip()
+            if not symbol:
+                continue
+            tip = _tip_for_phoneme(symbol)
+            if tip not in tips:
+                tips.append(tip)
+            if len(tips) >= 2:
+                return tips
+
+    worst = _build_worst_word_hint(debug)
+    if worst:
+        _, error_raw, error_label = worst
+        if error_raw not in {"", "none"}:
+            tips.append(t("pronunciation.tip_from_error", error=error_label))
+    return tips[:2]
 
 
 async def _edit_session_message(
@@ -124,7 +311,44 @@ def _build_pronunciation_questions(words: list[object], max_questions: int = 10)
 
 
 def _normalize_transcript(text: str) -> str:
-    return text.strip() if text else ""
+    if not text:
+        return ""
+    normalized = text.strip()
+    if not normalized:
+        return ""
+    # Punctuation-only transcripts like "." should be treated as not recognized.
+    if not any(ch.isalnum() for ch in normalized):
+        return ""
+    return normalized
+
+
+def _is_unheard_audio(transcript: str, debug: dict | None) -> bool:
+    if not transcript:
+        return True
+    pa = _extract_pron_assessment(debug)
+    if not isinstance(pa, dict):
+        return False
+    tracked = [
+        pa.get("pron_score"),
+        pa.get("accuracy_score"),
+        pa.get("fluency_score"),
+        pa.get("completeness_score"),
+    ]
+    numeric = [float(v) for v in tracked if isinstance(v, (int, float))]
+    if not numeric:
+        return False
+    all_zero = all(v <= 0.1 for v in numeric)
+    compact = transcript.replace(" ", "")
+    return all_zero and len(compact) <= 2
+
+
+async def _current_max_voice_seconds() -> int:
+    async with AsyncSessionLocal() as session:
+        value = await get_pronunciation_max_voice_seconds(session)
+    if value and value > 0:
+        settings.pronunciation_max_voice_seconds = value
+        return value
+    return settings.pronunciation_max_voice_seconds if settings.pronunciation_max_voice_seconds > 0 else MAX_VOICE_SECONDS
 
 
 async def _start_pron_quiz(
@@ -219,11 +443,12 @@ async def _process_voice(
     reference: str,
     retry_prompt: str | None = None,
     retry_markup=None,
-) -> tuple[str, str | None, int | None] | None:
+) -> tuple[str, str | None, float | None, dict | None] | None:
     if not message.voice:
         return None
-    if message.voice.duration and message.voice.duration > MAX_VOICE_SECONDS:
-        text = t("pronunciation.voice_too_long")
+    max_voice_seconds = await _current_max_voice_seconds()
+    if message.voice.duration and message.voice.duration > max_voice_seconds:
+        text = t("pronunciation.voice_too_long", max_seconds=max_voice_seconds)
         if retry_prompt:
             text = f"{text}\n\n{retry_prompt}"
         await _edit_session_message(message, state, text, reply_markup=retry_markup)
@@ -260,7 +485,7 @@ async def _process_voice(
                 session,
                 db_user_id,
                 audio_duration_seconds=audio_duration_seconds,
-                provider="assemblyai",
+                provider=current_stt_provider_name(),
             )
             reservation_id = reservation.ledger_id
         start = time.monotonic()
@@ -275,15 +500,14 @@ async def _process_voice(
             transcript_len,
         )
         transcript = _normalize_transcript(result.transcript)
-        if not transcript:
-            text = t("pronunciation.voice_not_understood")
-            if retry_prompt:
-                text = f"{text}\n\n{retry_prompt}"
+        debug = result.debug if isinstance(result.debug, dict) else None
+        if _is_unheard_audio(transcript, debug):
+            text = t("pronunciation.voice_not_understood_word", word=reference)
             await _edit_session_message(message, state, text, reply_markup=retry_markup)
             return None
         if contains_bad_words(transcript):
             logger.info("STT_FILTERED user=%s transcript_len=%s", user_id, len(transcript))
-            return result.verdict, None, None
+            return result.verdict, None, result.score, None
         logger.info(
             "STT_VERDICT user=%s verdict=%s transcript_len=%s",
             user_id,
@@ -296,7 +520,7 @@ async def _process_voice(
                 provider_request_id = result.debug.get("provider_request_id")
             if reservation_id:
                 await finalize_charge(session, reservation_id, provider_request_id=provider_request_id)
-        return result.verdict, transcript, None
+        return result.verdict, transcript, result.score, debug
     except CreditError as exc:
         logger.warning("STT_CREDIT_ERROR user=%s error=%s", user_id, str(exc))
         text = exc.user_message or t("pronunciation.credit_error")
@@ -502,6 +726,45 @@ async def pron_retry(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("pron:detail:show:"))
+async def pron_detail_show(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, _, context, page = callback.data.split(":")
+    data = await state.get_data()
+    default_text = str(data.get("pron_last_default_text") or "")
+    detail_text = str(data.get("pron_last_detail_text") or "")
+    has_detail = bool(data.get("pron_last_has_detail"))
+    if not default_text:
+        await callback.answer()
+        return
+    text = detail_text if has_detail and detail_text else default_text
+    await callback.message.edit_text(
+        text,
+        reply_markup=single_result_kb(
+            context,
+            int(page),
+            has_detail=has_detail,
+            detail_open=bool(has_detail and detail_text),
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pron:detail:hide:"))
+async def pron_detail_hide(callback: CallbackQuery, state: FSMContext) -> None:
+    _, _, _, context, page = callback.data.split(":")
+    data = await state.get_data()
+    default_text = str(data.get("pron_last_default_text") or "")
+    has_detail = bool(data.get("pron_last_has_detail"))
+    if not default_text:
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        default_text,
+        reply_markup=single_result_kb(context, int(page), has_detail=has_detail, detail_open=False),
+    )
+    await callback.answer()
+
+
 async def _handle_single_voice(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     reference = data.get("reference")
@@ -526,7 +789,38 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
     )
     if not result:
         return
-    verdict, transcript, _ = result
+    verdict, transcript, score, assessment_debug = result
+    if not _supports_detailed_pron_feedback():
+        default_text = (
+            t(
+                "pronunciation.single_result",
+                verdict=_verdict_text(verdict),
+                transcript=transcript,
+            )
+            if transcript
+            else t(
+                "pronunciation.single_result_hidden",
+                verdict=_verdict_text(verdict),
+            )
+        )
+        await state.update_data(
+            pron_last_default_text=default_text,
+            pron_last_detail_text="",
+            pron_last_has_detail=False,
+        )
+        await _edit_session_message(
+            message,
+            state,
+            default_text,
+            reply_markup=single_result_kb(context, page, has_detail=False, detail_open=False),
+        )
+        return
+
+    score100 = _overall_score_100(score_0_to_1=score, debug=assessment_debug)
+    tips = _build_simple_tips(assessment_debug)
+    tips_items = tips[:2] if tips else [t("pronunciation.tip_generic")]
+    tips_bullets = "\n".join(f"• {item}" for item in tips_items)
+    worst_hint = _build_worst_word_hint(assessment_debug)
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, message.from_user.id)
         await log_pronunciation(
@@ -536,24 +830,54 @@ async def _handle_single_voice(message: Message, state: FSMContext) -> None:
             reference_word=reference,
             mode="single",
         )
-    if transcript:
-        await _edit_session_message(
-            message,
-            state,
-            t(
-                "pronunciation.single_result",
-                verdict=_verdict_text(verdict),
-                transcript=transcript,
-            ),
-            reply_markup=single_result_kb(context, page),
+
+    score_value = score100 if isinstance(score100, int) else 0
+    if score_value >= 75:
+        default_text = t(
+            "pronunciation.single_feedback_success",
+            overall=score_value,
+            transcript=transcript or t("common.none"),
+            tips_bullets=tips_bullets,
         )
     else:
-        await _edit_session_message(
-            message,
-            state,
-            t("pronunciation.single_result_hidden", verdict=_verdict_text(verdict)),
-            reply_markup=single_result_kb(context, page),
+        worst_block = ""
+        if worst_hint:
+            worst_word, worst_error_raw, worst_error = worst_hint
+            if worst_error_raw not in {"", "none"}:
+                worst_block = t(
+                    "pronunciation.single_feedback_worst_block",
+                    word=worst_word,
+                    error=worst_error,
+                )
+        default_text = t(
+            "pronunciation.single_feedback_low",
+            overall=score_value,
+            transcript=transcript or t("common.none"),
+            worst_block=worst_block,
+            tips_bullets=tips_bullets,
         )
+
+    detail_block = _build_assessment_details(assessment_debug)
+    detail_text = default_text
+    has_detail = bool(detail_block)
+    if has_detail:
+        detail_text = t(
+            "pronunciation.single_feedback_detail",
+            base=default_text,
+            details=detail_block,
+        )
+
+    await state.update_data(
+        pron_last_default_text=default_text,
+        pron_last_detail_text=detail_text if has_detail else "",
+        pron_last_has_detail=has_detail,
+    )
+    await _edit_session_message(
+        message,
+        state,
+        default_text,
+        reply_markup=single_result_kb(context, page, has_detail=has_detail, detail_open=False),
+    )
 
 
 @router.callback_query(F.data == "pron:menu:quiz")
@@ -654,7 +978,7 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
     )
     if not result:
         return
-    verdict, transcript, _ = result
+    verdict, transcript, result_score, result_debug = result
     score = data.get("score", 0)
     correct = data.get("correct", 0)
     close = data.get("close", 0)
@@ -685,13 +1009,24 @@ async def _handle_quiz_voice(message: Message, state: FSMContext) -> None:
         if transcript
         else t("pronunciation.hidden_result")
     )
-    feedback = t(
-        "pronunciation.quiz_feedback",
-        verdict=_verdict_text(verdict),
-        transcript_line=transcript_line,
-        delta=2 if verdict == "correct" else 1 if verdict == "close" else 0,
-        score=score,
-    )
+    if _supports_detailed_pron_feedback():
+        result_pct = _overall_score_100(score_0_to_1=result_score, debug=result_debug)
+        feedback = t(
+            "pronunciation.quiz_feedback",
+            verdict=_verdict_text(verdict),
+            transcript_line=transcript_line,
+            result_pct=(f"{result_pct}%" if result_pct is not None else t("common.none")),
+            delta=2 if verdict == "correct" else 1 if verdict == "close" else 0,
+            score=score,
+        )
+    else:
+        feedback = t(
+            "pronunciation.quiz_feedback_simple",
+            verdict=_verdict_text(verdict),
+            transcript_line=transcript_line,
+            delta=2 if verdict == "correct" else 1 if verdict == "close" else 0,
+            score=score,
+        )
 
     if next_idx >= total:
         accuracy = (correct / total * 100) if total else 0

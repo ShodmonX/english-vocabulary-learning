@@ -52,14 +52,32 @@ def single_word_kb(context: str, page: int) -> InlineKeyboardMarkup:
     )
 
 
-def single_result_kb(context: str, page: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=b("pron.retry"), callback_data=f"pron:retry:{context}:{page}")],
+def single_result_kb(
+    context: str,
+    page: int,
+    *,
+    has_detail: bool = False,
+    detail_open: bool = False,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text=b("pron.retry"), callback_data=f"pron:retry:{context}:{page}")],
+    ]
+    if has_detail:
+        if detail_open:
+            rows.append(
+                [InlineKeyboardButton(text=b("pron.brief"), callback_data=f"pron:detail:hide:{context}:{page}")]
+            )
+        else:
+            rows.append(
+                [InlineKeyboardButton(text=b("pron.detail"), callback_data=f"pron:detail:show:{context}:{page}")]
+            )
+    rows.extend(
+        [
             [InlineKeyboardButton(text=b("pron.other_word_list"), callback_data=f"pron:single:choose:{context}:{page}")],
             [InlineKeyboardButton(text=b("pron.exit"), callback_data="pron:exit")],
         ]
     )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def quiz_kb() -> InlineKeyboardMarkup:

@@ -72,6 +72,8 @@ admin:
   global_limit: "⚙️ Global limit"
   full_test_charge: "💳 Level test narxi"
   test_limits: "🧪 Test sozlamalari"
+  stt_provider: "🗣 STT servis"
+  pron_max_voice: "🎙 Max audio uzunligi"
   db_management: "🗄 DB boshqaruvi"
   features: "⚙️ Funksiyalar"
   maintenance: "🧪 Texnik/Debug"
@@ -97,6 +99,8 @@ admin_settings:
   quick_time: "⚡ Tez test vaqti"
   full_count: "🎯 Level test savollari"
   full_time: "🎯 Level test vaqti"
+  stt_provider_assemblyai: "AssemblyAI"
+  stt_provider_azure: "Azure"
 
 admin_credits:
   add_id: "➕ ID orqali kredit"
@@ -206,6 +210,8 @@ pron:
   other_word: "🔁 Boshqa so‘z"
   other_word_list: "🗂 Boshqa so‘z"
   retry: "🔁 Qayta urinib ko‘rish"
+  detail: "🔤 Batafsil"
+  brief: "🧾 Qisqa"
   exit: "🏁 Menyuga qaytish"
   quiz_stop: "🛑 Quizni to‘xtatish"
   quiz_again: "🔁 Yana quiz"

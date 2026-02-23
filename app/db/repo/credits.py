@@ -134,8 +134,12 @@ async def _enforce_basic_limit(
 
 
 def _calculate_charge_seconds(audio_duration_seconds: int) -> int:
-    if audio_duration_seconds <= 0:
+    if audio_duration_seconds < 0:
         return 0
+    # Telegram voice duration can be 0 for very short clips (<1s).
+    # We still allow processing and charge minimum 1 second.
+    if audio_duration_seconds == 0:
+        return 1
     return max(1, int(ceil(audio_duration_seconds)))
 
 

@@ -32,6 +32,10 @@ from app.db.session import AsyncSessionLocal
 from app.db.repo.stars_payments import reprocess_paid
 from app.db.repo.bot_admins import ensure_owner_admin, list_admins, upsert_admin
 from app.db.repo.users import get_user_by_telegram_id
+from app.db.repo.app_settings import (
+    get_pronunciation_max_voice_seconds,
+    get_stt_provider,
+)
 from app.bot.handlers.admin.common import get_main_admin_id
 from app.services.log_buffer import ErrorBufferHandler
 from app.services.reminders import ReminderService
@@ -122,6 +126,12 @@ async def on_startup() -> None:
     setup_backup_scheduler(scheduler)
     scheduler.start()
     async with AsyncSessionLocal() as session:
+        stt_provider = await get_stt_provider(session)
+        if stt_provider in {"assemblyai", "azure"}:
+            app_settings.stt_provider = stt_provider
+        max_voice_seconds = await get_pronunciation_max_voice_seconds(session)
+        if max_voice_seconds and max_voice_seconds > 0:
+            app_settings.pronunciation_max_voice_seconds = max_voice_seconds
         owner_id = get_main_admin_id()
         if owner_id:
             owner_name = str(owner_id)
