@@ -803,7 +803,7 @@ practice:
   summary_record: "\n🏆 Yangi rekord! {longest} kun!"
 
 pronunciation:
-  single_prompt: "🎯 Ayting: {word}\n🌍 Tarjima: {translation}\n🎙 Voice yuboring (5–10 soniya)."
+  single_prompt: "🎯 Ayting: {word}\n🌍 Tarjima: {translation}\n🎙 Voice yuboring."
   quiz_prompt: "🧩 Talaffuz Quiz — Savol {index}/{total}\n🎯 Ayting: {word}\n🌍 Tarjima: {translation}\n🎙 Voice yuboring."
   verdict_correct: "✅ To‘g‘ri"
   verdict_close: "🟨 Yaqin"
@@ -832,7 +832,7 @@ pronunciation:
   results_page: "{title} ({page}):"
   selected_empty: "Tanlangan so‘zlar yo‘q 🙂"
   voice_too_long: "⏱ Juda uzun. Maksimum: {max_seconds} soniya 🙂"
-  voice_too_large: "⏱ Juda katta fayl. 5–10 soniya yuboring 🙂"
+  voice_too_large: "⏱ Juda katta fayl. Biroz qisqaroq audio yuboring 🙂"
   voice_process_failed: "⚠️ Ovozni qayta ishlay olmadim."
   voice_not_understood: "🤔 Ovozni tushuna olmadim. Sokin joyda qayta ayting."
   voice_not_understood_word: |
